@@ -33,12 +33,21 @@ if "ticket" in message:
     object = "ticket"
 elif "car" in message:
     object = "car"
-elif "keys" in message or "keys" in message:
+elif "keys" in message or "key" in message:
     object = "keys"
 else:
     print("No object detected")
 
+with open("memory.txt", "w", encoding="utf-8") as file:
+    file.write(f"{time}\n{person}\n{object}")
+
 if "What is Alex sending?" in question:
+    with open("memory.txt", "r") as file:
+        lines = file.readlines()
+    time = lines[0].strip()
+    person = lines[1].strip()
+    object = lines[2].strip()
+
     print(f"{person} is sending {object} to you {time}.")
 else:
     print("I'm sorry, I don't know.")
