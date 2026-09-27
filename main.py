@@ -3,54 +3,54 @@ import json
 time = ""
 person = ""
 object = ""
-mode = input("Would you like to:" + "\n" "1: Remember Something" + "\n" + "2: Ask Something" + "\n" "You: ")
-if mode.lower() == "remember something":
-        message = input("You: ")
-        message = message.lower()
-        print("Got it!")
+message = input("You: ")
+message = message.lower()
 
-        if "tomorrow" in message or "next week" in message or "next month" in message:
-            print("This might be important")
-        else:       
-            print("Not important")
+if "?" in message or "who" in message or "when" in message:
+    mode = "ask"
+else:
+    mode = "remember"
 
-        if "tomorrow" in message:
-            time = "tomorrow"
-        elif "next week" in message:
-            time = "next week"
-        elif "next month" in message:
-            time = "next month"
-        else:
-            print("No time detected")
+if mode == "remember":
+    if "tomorrow" in message:
+        time = "tomorrow"
+    elif "next week" in message:
+        time = "next week"
+    elif "next month" in message:
+        time = "next month"
+    else:
+        print("No time detected")
 
-        if "alex" in message:
-            person = "Alex"
-        elif "jaydon" in message:
-            person = "Jaydon"
-        elif "steve" in message:
-            person = "Steve"
-        else:
-            print("No name detected")
+    if "alex" in message:
+        person = "Alex"
+    elif "jaydon" in message:
+        person = "Jaydon"
+    elif "steve" in message:
+        person = "Steve"
+    else:
+        print("No name detected")
 
-        if "ticket" in message:
-            object = "ticket"
-        elif "car" in message:
-            object = "car"
-        elif "keys" in message or "key" in message:
-            object = "keys"
-        else:
-            print("No object detected")
+    if "ticket" in message:
+        object = "ticket"
+    elif "car" in message:
+        object = "car"
+    elif "keys" in message or "key" in message:
+        object = "keys"
+    else:
+        print("No object detected")
 
-        memory = {
-                "time": time,
-                "person": person,
-                "object": object
-            }
+    memory = {
+            "time": time,
+            "person": person,
+            "object": object
+        }
         
-        with open("memory.jsonl", "a", encoding="utf-8") as file:
-                file.write(json.dumps(memory) + "\n")
+    with open("memory.jsonl", "a", encoding="utf-8") as file:
+        file.write(json.dumps(memory) + "\n")
 
-elif mode.lower() == "ask something":
+    print("Stored new info")
+
+elif mode == "ask":
     memories = []
     try:
         with open("memory.jsonl", "r", encoding="utf-8") as file:
@@ -62,24 +62,19 @@ elif mode.lower() == "ask something":
         print("Memory file does not exist!")
         exit()
 
-    print("Sure! Ask whatever you want to!")
-
-    question = input("You: ")
-    question = question.lower()
-
-    if "who" in question:
+    if "who" in message:
         intent = "who"
-    elif "when" in question:
+    elif "when" in message:
         intent = "when"
     else:
         print("No intent found")
         exit()
 
-    if "keys" in question:
+    if "keys" in message:
         target = "keys"
-    elif "car" in question:
+    elif "car" in message:
         target = "car"
-    elif "ticket" in question:
+    elif "ticket" in message:
         target = "ticket"
     else:
         print("No target found for object")
@@ -97,5 +92,3 @@ elif mode.lower() == "ask something":
 
     if not found:
         print("Memory not found!")
-else:
-    print("Please choose between two options!")
