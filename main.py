@@ -6,6 +6,7 @@ object = ""
 mode = input("Would you like to:" + "\n" "1: Remember Something" + "\n" + "2: Ask Something" + "\n" "You: ")
 if mode.lower() == "remember something":
         message = input("You: ")
+        message = message.lower()
         print("Got it!")
 
         if "tomorrow" in message or "next week" in message or "next month" in message:
@@ -22,11 +23,11 @@ if mode.lower() == "remember something":
         else:
             print("No time detected")
 
-        if "Alex" in message or "alex" in message:
+        if "alex" in message:
             person = "Alex"
-        elif "Jaydon" in message or "jaydon" in message:
+        elif "jaydon" in message:
             person = "Jaydon"
-        elif "Steve" in message or "steve" in message:
+        elif "steve" in message:
             person = "Steve"
         else:
             print("No name detected")
@@ -45,39 +46,56 @@ if mode.lower() == "remember something":
                 "person": person,
                 "object": object
             }
-            
+        
         with open("memory.jsonl", "a", encoding="utf-8") as file:
                 file.write(json.dumps(memory) + "\n")
 
 elif mode.lower() == "ask something":
     memories = []
-    with open("memory.jsonl", "r", encoding="utf-8") as file:
-        for line in file:
-            line = line.strip()
-            if line:
-                memories.append(json.loads(line))
+    try:
+        with open("memory.jsonl", "r", encoding="utf-8") as file:
+            for line in file:
+                line = line.strip()
+                if line:
+                    memories.append(json.loads(line))
+    except FileNotFoundError:
+        print("Memory file does not exist!")
+        exit()
 
     print("Sure! Ask whatever you want to!")
 
     question = input("You: ")
+    question = question.lower()
+
     if "who" in question:
         intent = "who"
     elif "when" in question:
         intent = "when"
+    else:
+        print("No intent found")
+        exit()
 
-    if "key" in question:
+    if "keys" in question:
         target = "keys"
     elif "car" in question:
         target = "car"
     elif "ticket" in question:
         target = "ticket"
+    else:
+        print("No target found for object")
+        exit()
+
+    found = False
 
     for m in memories:
         if m["object"] == target:
+            found = True
             if intent == "who":
                 print(m["person"])
             elif intent == "when":
                 print(m["time"])
 
+    if not found:
+        print("Memory not found!")
 else:
-    print("Please choose between two options!")
+    print("Please choose between two options!") 
