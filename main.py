@@ -98,4 +98,4 @@ elif mode.lower() == "ask something":
     if not found:
         print("Memory not found!")
 else:
-    print("Please choose between two options!") 
+    print("Please choose between two options!")
