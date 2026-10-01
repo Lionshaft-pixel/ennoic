@@ -5,11 +5,25 @@ person = ""
 object = ""
 message = input("You: ")
 message = message.lower()
+memories = []
 
 if "?" in message or "who" in message or "when" in message:
     mode = "ask"
+elif "forget" in message:
+    mode = "forget"
 else:
     mode = "remember"
+
+try:
+    with open("memory.jsonl", "r", encoding="utf-8") as file: # This is unneccessary for remember branch
+        for line in file:
+            line = line.strip()
+            if line:
+                memories.append(json.loads(line))
+except FileNotFoundError:
+        print("Memory file does not exist!")
+        exit()
+    
 
 if mode == "remember":
     if "tomorrow" in message:
@@ -44,24 +58,19 @@ if mode == "remember":
             "person": person,
             "object": object
         }
-        
-    with open("memory.jsonl", "a", encoding="utf-8") as file:
-        file.write(json.dumps(memory) + "\n")
+    
+    for m in memories:
+        if m["person"] == person and m["object"] == object:
+            m["time"] = time
+    print(memories)
+
+    with open("memory.jsonl", "w", encoding="utf-8") as file:
+        for m in memories:
+            file.write(json.dumps(m) + "\n")
 
     print("Stored new info")
 
 elif mode == "ask":
-    memories = []
-    try:
-        with open("memory.jsonl", "r", encoding="utf-8") as file:
-            for line in file:
-                line = line.strip()
-                if line:
-                    memories.append(json.loads(line))
-    except FileNotFoundError:
-        print("Memory file does not exist!")
-        exit()
-
     if "who" in message:
         intent = "who"
     elif "when" in message:
@@ -89,6 +98,30 @@ elif mode == "ask":
                 print(m["person"])
             elif intent == "when":
                 print(m["time"])
+                break
 
     if not found:
         print("Memory not found!")
+
+elif mode == "forget":
+    new_memories = []
+
+    if "keys" in message:
+        target = "keys"
+    elif "car" in message:
+        target = "car"
+    elif "ticket" in message:
+        target = "ticket"
+    else:
+        print("No target found")
+        exit()
+
+    for m in memories:
+        if m["object"] != target:
+                new_memories.append(m)
+
+    with open("memory.jsonl", "w", encoding="utf-8") as file:
+        for m in new_memories:
+            file.write(json.dumps(m) + "\n")
+
+    print("Memory deleted!")
