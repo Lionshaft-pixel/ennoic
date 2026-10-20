@@ -1,4 +1,6 @@
-Readme.txt
 test.py
 memory.jsonl
 cloud_test.py
+__pycache__/
+*.py[cod]
+.env
