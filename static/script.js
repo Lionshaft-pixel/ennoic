@@ -1,21 +1,13 @@
-/* ==========================================================
-   Ennoic Mind - frontend behavior (no framework)
+/* yes, I vibecoded the frontend */
 
-   Backend contract (to be built on the Python side):
-     POST /api/chat
-     Request:  { "conversation_id": "123", "message": "my brain dump" }
-     Response: { "reply": "## Heading\n\nParagraph\n\n- item\n- item" }
-   Separate blocks with blank lines. "## " starts a heading and
-   lines starting with "- " make a list.
-
-   Add ?demo to the page URL to see placeholder replies while
-   the backend does not exist yet.
-   ========================================================== */
 "use strict";
 
 const API_URL = "/api/chat";
 const STORAGE_KEY = "ennoic-mind:conversations";
+const ACTIVE_ID_KEY = "ennoic-mind:active-conversation";
 const DEMO = new URLSearchParams(location.search).has("demo");
+const MAX_HISTORY_MESSAGES = 12;
+const MAX_HISTORY_MESSAGE_CHARS = 4000;
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -26,22 +18,34 @@ const els = {
   settings: $("settings"), openSettings: $("open-settings"), clearAll: $("clear-all"),
 };
 
-// State: conversations look like { id, title, messages: [{ role, text }] }
 let conversations = loadConversations();
-let activeId = null; // null means "new conversation, nothing sent yet"
+let activeId = loadActiveConversationId(); // null means "new conversation, nothing sent yet"
 let loading = false;
 const mobile = window.matchMedia("(max-width: 768px)");
 
-/* ---------- Storage ---------- */
 function loadConversations() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { return []; }
 }
 function saveConversations() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations)); } catch { /* storage unavailable */ }
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
+    if (activeId && conversations.some((convo) => convo.id === activeId)) {
+      localStorage.setItem(ACTIVE_ID_KEY, activeId);
+    } else {
+      localStorage.setItem(ACTIVE_ID_KEY, "");
+    }
+  } catch { /* storage unavailable */ }
+}
+function loadActiveConversationId() {
+  try {
+    const savedId = localStorage.getItem(ACTIVE_ID_KEY);
+    // Older installs saved conversations but not the selected conversation.
+    if (savedId === null) return conversations.at(-1)?.id ?? null;
+    return conversations.some((convo) => convo.id === savedId) ? savedId : null;
+  } catch { return null; }
 }
 const activeConversation = () => conversations.find((c) => c.id === activeId);
 
-/* ---------- Sidebar ---------- */
 function setSidebar(open) {
   els.app.dataset.sidebar = open ? "open" : "closed";
   els.toggle.setAttribute("aria-expanded", String(open));
@@ -69,7 +73,7 @@ function renderHistory() {
     btn.className = "history-item";
     btn.textContent = c.title;
     if (c.id === activeId) btn.setAttribute("aria-current", "true");
-    btn.addEventListener("click", () => { activeId = c.id; render(); if (mobile.matches) setSidebar(false); });
+    btn.addEventListener("click", () => { activeId = c.id; saveConversations(); render(); if (mobile.matches) setSidebar(false); });
     li.append(btn);
     return li;
   }));
@@ -85,28 +89,75 @@ function renderThread() {
   els.thread.scrollTo({ top: els.thread.scrollHeight });
 }
 
-function messageEl({ role, text }) {
+function messageEl({ role, text, truncated = false }) {
   const div = document.createElement("div");
   div.className = `message ${role}`;
   if (role === "user") div.textContent = text;
-  else div.append(...formatReply(text));
+  else {
+    div.append(formatReply(text));
+    if (truncated) {
+      const notice = document.createElement("p");
+      notice.className = "truncation-notice";
+      notice.setAttribute("role", "status");
+      notice.textContent = "This reply reached the model's output limit and may be incomplete. Ask for a shorter answer or request one section at a time.";
+      div.append(notice);
+    }
+  }
   return div;
 }
 
-// Turns plain reply text into headings, lists and paragraphs (textContent only, so it is safe).
+// Parse Markdown, then sanitize the resulting HTML before it enters the document.
 function formatReply(text) {
-  return text.trim().split(/\n{2,}/).map((block) => {
-    const lines = block.split("\n");
-    if (lines.every((l) => /^[-*] /.test(l))) {
-      const ul = document.createElement("ul");
-      lines.forEach((l) => { const li = document.createElement("li"); li.textContent = l.slice(2); ul.append(li); });
-      return ul;
-    }
-    const isHeading = /^#{1,3} /.test(block);
-    const el = document.createElement(isHeading ? "h3" : "p");
-    el.textContent = isHeading ? block.replace(/^#{1,3} /, "") : block;
-    return el;
+  if (!window.marked || !window.DOMPurify) {
+    const fallback = document.createElement("p");
+    fallback.className = "plain-reply";
+    fallback.textContent = text;
+    return fallback;
+  }
+
+  const html = window.marked.parse(text, { gfm: true });
+  const fragment = window.DOMPurify.sanitize(html, {
+    USE_PROFILES: { html: true },
+    ALLOW_DATA_ATTR: false,
+    FORBID_TAGS: ["style"],
+    FORBID_ATTR: ["style"],
+    RETURN_DOM_FRAGMENT: true,
   });
+
+  fragment.querySelectorAll("pre > code").forEach((code) => {
+    const pre = code.parentElement;
+    const block = document.createElement("div");
+    block.className = "code-block";
+
+    const header = document.createElement("div");
+    header.className = "code-header";
+    const language = code.className.match(/(?:^|\s)language-([\w.+#-]+)/)?.[1] || "Code";
+    const label = document.createElement("span");
+    label.className = "code-language";
+    label.textContent = language;
+
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "copy-code";
+    copy.textContent = "Copy";
+    copy.setAttribute("aria-label", `Copy ${language} code`);
+    copy.addEventListener("click", async () => {
+      try {
+        if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+        await navigator.clipboard.writeText(code.textContent);
+        copy.textContent = "Copied";
+      } catch {
+        copy.textContent = "Copy failed";
+      }
+      window.setTimeout(() => { copy.textContent = "Copy"; }, 1800);
+    });
+
+    header.append(label, copy);
+    pre.replaceWith(block);
+    block.append(header, pre);
+  });
+
+  return fragment;
 }
 
 function loadingEl() {
@@ -153,8 +204,8 @@ async function getReply(convo) {
   els.messages.append(pending);
   els.thread.scrollTo({ top: els.thread.scrollHeight });
   try {
-    const reply = await requestReply(convo);
-    convo.messages.push({ role: "assistant", text: reply });
+    const result = await requestReply(convo);
+    convo.messages.push({ role: "assistant", text: result.reply, truncated: result.truncated });
     saveConversations();
     if (convo.id === activeId) renderThread();
   } catch (err) {
@@ -167,18 +218,38 @@ async function getReply(convo) {
 async function requestReply(convo) {
   if (DEMO) {
     await new Promise((resolve) => setTimeout(resolve, 900));
-    return "## Demo reply\n\nThe backend isn't connected. This placeholder only tests the layout.\n\n- Nothing was sent to a server\n- Your message is saved in this browser only";
+    return {
+      reply: "## Demo reply\n\nThe backend isn't connected. This placeholder only tests the layout.\n\n- Nothing was sent to a server\n- Your message is saved in this browser only",
+      truncated: false,
+    };
   }
   const message = convo.messages[convo.messages.length - 1].text;
+  const history = convo.messages
+    .slice(0, -1)
+    .filter((item) => (item.role === "user" || item.role === "assistant") && typeof item.text === "string")
+    .slice(-MAX_HISTORY_MESSAGES)
+    .map(({ role, text }) => ({
+      role,
+      text: role === "assistant"
+        ? text.slice(-MAX_HISTORY_MESSAGE_CHARS)
+        : text.slice(0, MAX_HISTORY_MESSAGE_CHARS),
+    }));
   const res = await fetch(API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ conversation_id: convo.id, message }),
+    body: JSON.stringify({ conversation_id: convo.id, message, history }),
   });
-  if (!res.ok) throw new Error(`The server returned status ${res.status}.`);
-  const data = await res.json();
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error("The server returned an unreadable response.");
+  }
+  if (!res.ok) {
+    throw new Error(typeof data.error === "string" ? data.error : `The server returned status ${res.status}.`);
+  }
   if (typeof data.reply !== "string") throw new Error('The response had no "reply" text.');
-  return data.reply;
+  return { reply: data.reply, truncated: data.truncated === true };
 }
 
 function setLoading(value) {
@@ -211,6 +282,7 @@ els.form.addEventListener("submit", (e) => {
 /* ---------- Other controls ---------- */
 els.newChat.addEventListener("click", () => {
   activeId = null;
+  saveConversations();
   render();
   els.input.focus();
   if (mobile.matches) setSidebar(false);
