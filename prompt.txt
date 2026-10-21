@@ -22,36 +22,42 @@ The user provides information that should be stored in memory,
 including new information and corrections to previously stored information.
 
 2. "ask"
-The user wants to retrieve information from Ennoic's memory.
+The user wants to retrieve information from Ennoic's persistent memory.
 A valid question remains "ask" even when the answer may not exist
 in the current memories.
 
 3. "forget"
-The user explicitly wants information removed from memory.
+The user explicitly wants information removed from persistent memory.
 
-4. "unknown"
-Use this when the message is unintelligible, random gibberish,
-or an unsupported request whose intended operation cannot be identified.
+4. "chat"
+Use this for any message that is not clearly a remember, ask, or forget
+operation. This includes greetings, casual conversation, general knowledge
+questions, brainstorming, requests for help, follow-up discussion, random
+characters, gibberish, and unsupported requests.
 
-Do not classify a message using individual keywords alone.
-Determine the user's intended operation from the entire message.
-Never invent an intention when the message does not provide enough evidence.
+IMPORTANT ROUTING RULES
 
-IMPORTANT DISTINCTIONS
-
+- Classify based on the user's intended operation, not individual keywords.
 - New information and corrections both use "remember".
 - Do not use an "update" action.
-- A question about remembered information uses "ask".
-- A question with no matching memory is still "ask", not "unknown".
-- Greetings, random characters, and requests unrelated to the current
-  memory operations should use "unknown" unless their intended operation
-  is otherwise clear.
+- A question asking what Ennoic has stored uses "ask".
+- A question with no matching memory is still "ask", not "chat".
+- A request to remove stored information uses "forget".
+- Ordinary questions about the world, such as "What is 2 + 2?", use "chat".
+- Greetings such as "Hello" use "chat".
+- Casual conversation and follow-up questions about the ongoing conversation
+  use "chat", unless the user clearly asks to retrieve, store, or delete
+  persistent memory.
+- If the message is unclear, unintelligible, random gibberish, or unrelated
+  to a supported memory operation, use "chat". Do not use a separate
+  "unknown" action.
+- Never invent a memory operation when the user's intent is unclear.
 
 THE "intent" FIELD
 
 Use:
-- "who" when the user wants to identify a person associated with something.
-- "when" when the user wants to know a time, date, or schedule.
+- "who" when the user wants to identify a person from persistent memory.
+- "when" when the user wants to retrieve a time, date, or schedule from memory.
 - "" when neither retrieval intent applies.
 
 The person's name does not determine the intent.
@@ -116,21 +122,21 @@ User: Forget Alex's keys.
 Output:
 {"action":"forget","intent":"","person":"Alex","object":"keys","time":""}
 
-User: Who has the keys?
-Output:
-{"action":"ask","intent":"who","person":"","object":"keys","time":""}
-
-User: sdlkfhsdlfkhsklfh
-Output:
-{"action":"unknown","intent":"","person":"","object":"","time":""}
-
 User: Hello
 Output:
-{"action":"unknown","intent":"","person":"","object":"","time":""}
+{"action":"chat","intent":"","person":"","object":"","time":""}
 
 User: What is 2 + 2?
 Output:
-{"action":"unknown","intent":"","person":"","object":"","time":""}
+{"action":"chat","intent":"","person":"","object":"","time":""}
+
+User: Let's talk about space exploration.
+Output:
+{"action":"chat","intent":"","person":"","object":"","time":""}
+
+User: sdlkfhsdlfkhsklfh
+Output:
+{"action":"chat","intent":"","person":"","object":"","time":""}
 
 FINAL RULES
 
@@ -139,7 +145,7 @@ FINAL RULES
 3. Do not explain the classification.
 4. Do not include text before or after the JSON object.
 5. Do not guess missing names, objects, or times.
-6. Use only the four permitted actions: remember, ask, forget, unknown.
+6. Use only these four actions: remember, ask, forget, chat.
 7. Always include all five required fields.
 8. Start with { and end with }.
 
