@@ -1,6 +1,6 @@
-# Ennoic
+﻿# Ennoic
 
-AI powered memory tool that lets you store stuff, retrieve it, and forget information using natural language.
+An AI-powered memory tool that lets you store stuff, retrieve it, and forget information using natural language.
 
 Originally, the idea was to build this for mobile devices since, you know, billions of people use them. So I started with Python because that's what I know.
 
@@ -12,15 +12,15 @@ Ennoic is a memory assistant (for now). You tell it stuff, it remembers. You ask
 
 It uses an LLM to interpret whatever you type and convert that into structured data (action, intent, person, object, and time) that gets stored in a local file. When you ask a question later, it searches that file and gives you an answer.
 
-It can run on a local model (via Ollama) or a cloud model. Me, personally, I use Groq's API, but you can change the model if you want. You'll notice the code is set to cloud mode by default.
+It can run on a local model (via Ollama) or a cloud model. Personally, I use Groq's API, but you can change the model if you want. For now, you'll notice the code is set to cloud mode by default.
 
-The LLM can misunderstand whatever you type or extract the wrong information. So, even if the memory system works correctly, it MIGHT store something that wasn't what you meant.
+One thing to keep in mind: the LLM can misunderstand what you type or extract the wrong information. So, even if the memory system works correctly, it might store something that wasn't what you meant.
 
 ---
 
 ## The Flow
 
-1. If you type something like, *"Remember that Alex has the keys tomorrow."*
+1. You type something like, *"Remember that Alex has the keys tomorrow."*
 
 2. The AI parses it into structured JSON data:
 
@@ -28,8 +28,9 @@ The LLM can misunderstand whatever you type or extract the wrong information. So
    {"action": "remember", "intent": "...", "person": "Alex", "object": "keys", "time": "tomorrow"}
    ```
 
+   The exact fields depend on what the AI extracts from your input.
 
-3. And that gets saved to `memory.jsonl`, which is, of course, one JSON object per line or call it JSONL.
+3. That gets saved to `memory.jsonl`, which is, of course, one JSON object per line (JSONL).
 
 4. Next time you ask, *"Who has the keys?"*, it reads the file, finds the match, and answers something like, *"Alex has the keys."*
 
@@ -42,11 +43,11 @@ The LLM can misunderstand whatever you type or extract the wrong information. So
 - **forget**: remove matching information from stored memory
 - **unknown**: inputs that don't fit the memory system, like gibberish, greetings, or unrelated questions
 
-`unknown` doesn't mean Ennoic can answer random questions like a general purpose chatbot. It's only there for handling when none of these four action fields matches with input.
+`unknown` doesn't mean Ennoic can answer random questions like a general-purpose chatbot. It just means the input doesn't fit the memory actions it currently supports.
 
 ---
 
-## Storage
+## Memory Storage
 
 All persistent memory is stored in `memory.jsonl`. Each line contains a JSON object representing a memory entry. A simplified example looks like this:
 
@@ -121,7 +122,7 @@ python3 main.py
 
 ---
 
-## Exceptions
+## What it can't do
 
 Ennoic is an early prototype, so there's still plenty to improve.
 
