@@ -1,4 +1,6 @@
 import hashlib
+import html
+import json
 import os
 import re
 import smtplib
@@ -48,8 +50,8 @@ class AccountTestCase(unittest.TestCase):
             raise AssertionError(f"Test account sign in failed: {response.status_code}")
 
     @staticmethod
-    def csrf_token(client, path="/"):
-        response = client.get(path)
+    def csrf_token(client, path="/login"):
+        response = client.get(path, follow_redirects=True)
         match = re.search(rb'<meta name="csrf-token" content="([^"]+)"', response.data)
         if match:
             return match.group(1).decode()
@@ -57,6 +59,13 @@ class AccountTestCase(unittest.TestCase):
         if not match:
             raise AssertionError("A CSRF token was not rendered.")
         return match.group(1).decode()
+
+    @staticmethod
+    def auth_context(response):
+        match = re.search(rb'<meta name="ennoic-auth-context" content="([^"]+)"', response.data)
+        if not match:
+            raise AssertionError("Authentication context was not rendered.")
+        return json.loads(html.unescape(match.group(1).decode()))
 
 
 class AccountAuthenticationTests(AccountTestCase):
@@ -205,7 +214,7 @@ class AccountAuthenticationTests(AccountTestCase):
 
     def test_invalid_login_and_expired_or_reused_verification_link(self):
         client = app.app.test_client()
-        self.assertIn(b"New accounts must verify their email", client.get("/").data)
+        self.assertEqual(client.get("/login").status_code, 200)
         user = account_store.create_user("verify@example.com", "correct-horse-battery-7")
         token = app._create_email_token(user, "verify")
         self.assertEqual(client.get(f"/auth/verify/{token}").status_code, 200)
@@ -216,7 +225,56 @@ class AccountAuthenticationTests(AccountTestCase):
             data={"csrf_token": csrf_token, "email": "missing@example.com", "password": "wrong-password"},
         )
         self.assertEqual(response.status_code, 401)
-        self.assertIn(b"Email or password is incorrect.", response.data)
+        self.assertEqual(self.auth_context(response)["error"], "Email or password is incorrect.")
+
+    def test_public_landing_links_to_account_forms(self):
+        client = app.app.test_client()
+        response = client.get("/")
+        self.assertEqual(response.status_code, 200)
+        embedded_page = re.search(
+            rb'<script type="__bundler/template">\s*(.*?)\s*</script>',
+            response.data,
+            re.S,
+        )
+        self.assertIsNotNone(embedded_page)
+        landing_page = json.loads(embedded_page.group(1))
+        nonce = re.search(rb'<script nonce="([^"]+)">', response.data)
+        self.assertIsNotNone(nonce)
+        self.assertIn(
+            f"'nonce-{nonce.group(1).decode()}'".encode(),
+            response.headers["Content-Security-Policy"].encode(),
+        )
+        self.assertIn(b"'strict-dynamic' 'unsafe-eval' blob:", response.headers["Content-Security-Policy"].encode())
+        self.assertIn("Get started free", landing_page)
+        self.assertIn('href="/login?form=register"', landing_page)
+        self.assertIn('href="#benefits"', landing_page)
+        self.assertIn(
+            '<a href="/login" aria-label="Open the Ennoic app preview" id="preview"',
+            landing_page,
+        )
+
+        login_page = client.get("/login")
+        self.assertEqual(login_page.status_code, 200)
+        self.assertIn(b"auth-integration.js", login_page.data)
+        nonce = re.search(rb'<script nonce="([^"]+)">', login_page.data)
+        self.assertIsNotNone(nonce)
+        self.assertIn(
+            f"'nonce-{nonce.group(1).decode()}'".encode(),
+            login_page.headers["Content-Security-Policy"].encode(),
+        )
+        self.assertIn(b"'strict-dynamic' 'unsafe-eval' blob:", login_page.headers["Content-Security-Policy"].encode())
+        self.assertEqual(self.auth_context(login_page)["activeForm"], "login")
+        register_page = client.get("/login?form=register")
+        self.assertEqual(register_page.status_code, 200)
+        self.assertEqual(self.auth_context(register_page)["activeForm"], "register")
+        self.assertIn(b"auth-integration.js", register_page.data)
+        self.assertNotIn(b"Welcome back", register_page.data)
+
+        csrf_error = client.post("/auth/login", data={"csrf_token": "invalid"})
+        self.assertEqual(csrf_error.status_code, 400)
+        self.assertEqual(self.auth_context(csrf_error)["error"], "Your session expired. Please try again.")
+        self.assertIn(b"auth-integration.js", csrf_error.data)
+        self.assertNotIn(b"Welcome back", csrf_error.data)
 
     def test_password_reset_changes_hash_and_invalidates_existing_sessions(self):
         user = self.create_verified_user("reset@example.com")

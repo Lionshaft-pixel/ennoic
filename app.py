@@ -8,7 +8,7 @@ from email.message import EmailMessage
 from pathlib import Path
 from urllib.parse import urljoin
 
-from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, g, jsonify, redirect, render_template, request, session, url_for
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -100,7 +100,7 @@ def load_user(user_id):
 def unauthorized():
     if request.path.startswith("/api/"):
         return jsonify({"error": "Sign in to continue."}), 401
-    return redirect(url_for("home"))
+    return redirect(url_for("login_page"))
 
 
 @app.before_request
@@ -117,13 +117,24 @@ def add_security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
-    response.headers.setdefault(
-        "Content-Security-Policy",
-        "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-        "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; "
-        "connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
-    )
+    bundle_nonce = getattr(g, "landing_csp_nonce", None) or getattr(g, "auth_csp_nonce", None)
+    if bundle_nonce:
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            f"script-src 'self' 'nonce-{bundle_nonce}' 'strict-dynamic' 'unsafe-eval' blob: https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; "
+            "connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; "
+            "object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+        )
+    else:
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; "
+            "connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+        )
     if request.is_secure:
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     if response.mimetype == "text/html":
@@ -135,14 +146,14 @@ def add_security_headers(response):
 def handle_csrf_error(error):
     if request.path.startswith("/api/"):
         return jsonify({"error": "Your session security token expired. Reload and try again."}), 400
-    return render_template("auth.html", auth_error="Your session expired. Please try again."), 400
+    return _auth_template(auth_error="Your session expired. Please try again."), 400
 
 
 @app.errorhandler(429)
 def handle_rate_limit(error):
     if request.path.startswith("/api/"):
         return jsonify({"error": "Too many attempts. Please wait and try again."}), 429
-    return render_template("auth.html", auth_error="Too many attempts. Please wait and try again."), 429
+    return _auth_template(auth_error="Too many attempts. Please wait and try again."), 429
 
 
 @app.errorhandler(413)
@@ -295,7 +306,24 @@ def _send_token_email(user, purpose):
 
 
 def _auth_template(**values):
-    return render_template("auth.html", **values)
+    g.auth_csp_nonce = secrets.token_urlsafe(18)
+    values.setdefault("active_form", "login")
+    values.setdefault("auth_error", None)
+    values.setdefault("auth_notice", None)
+    values.setdefault("reset_token", None)
+    auth_context = {
+        "activeForm": values["active_form"],
+        "csrfToken": generate_csrf(),
+        "error": values["auth_error"],
+        "notice": values["auth_notice"],
+        "resetToken": values["reset_token"],
+    }
+    return render_template(
+        "authentication.html",
+        auth_context=auth_context,
+        csp_nonce=g.auth_csp_nonce,
+        **values,
+    )
 
 
 def _logged_in_user():
@@ -308,9 +336,18 @@ def _logged_in_user():
 
 @app.route("/")
 def home():
-    if not current_user.is_authenticated:
-        return _auth_template()
-    return render_template("index.html", user=current_user, csrf_token=generate_csrf())
+    if current_user.is_authenticated:
+        return render_template("index.html", user=current_user, csrf_token=generate_csrf())
+    g.landing_csp_nonce = secrets.token_urlsafe(18)
+    return render_template("landing.html", csp_nonce=g.landing_csp_nonce)
+
+
+@app.route("/login")
+def login_page():
+    if current_user.is_authenticated:
+        return redirect(url_for("home"))
+    active_form = "register" if request.args.get("form") == "register" else "login"
+    return _auth_template(active_form=active_form)
 
 
 @app.route("/auth/register", methods=["POST"])
