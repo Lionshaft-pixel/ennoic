@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>Sign in · Ennoic</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/i18n.js" defer></script>
+  <script src="/static/auth.js" defer></script>
+</head>
+<body class="auth-page">
+  <main class="auth-card">
+    <a class="auth-brand" href="/" aria-label="Ennoic home"><span class="chat-mark" aria-hidden="true">e</span> Ennoic</a>
+    <p class="eyebrow" data-i18n="taskEyebrow">A little more clarity</p>
+    <h1 data-i18n="authHeading">Your tasks, yours alone.</h1>
+    <p class="auth-intro" data-i18n="authIntro">Sign in to keep your tasks, conversations, and memories private to your account.</p>
+
+    {% if auth_error %}<p class="auth-message error" role="alert">{{ auth_error }}</p>{% endif %}
+    {% if auth_notice %}<p class="auth-message" role="status">{{ auth_notice }}</p>{% endif %}
+
+    {% if reset_token %}
+    <section class="auth-form-panel">
+      <h2 data-i18n="chooseNewPassword">Choose a new password</h2>
+      <form method="post" action="{{ url_for('reset_password', token=reset_token) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="reset-password" data-i18n="newPassword">New password</label>
+        <input id="reset-password" name="password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
+        <p class="auth-help" data-i18n="passwordRequirements">Use 12 to 128 characters.</p>
+        <button class="btn primary" type="submit" data-i18n="changePassword">Change password</button>
+      </form>
+    </section>
+    {% else %}
+    <div class="auth-tabs" role="tablist" aria-label="Account access" data-i18n-aria-label="accountAccess">
+      <button type="button" role="tab" data-auth-tab="login" aria-selected="{{ 'true' if active_form != 'register' else 'false' }}" data-i18n="signIn">Sign in</button>
+      <button type="button" role="tab" data-auth-tab="register" aria-selected="{{ 'true' if active_form == 'register' else 'false' }}" data-i18n="createAccount">Create account</button>
+    </div>
+
+    <section class="auth-form-panel" data-auth-panel="login" {% if active_form == 'register' %}hidden{% endif %}>
+      <h2 data-i18n="welcomeBack">Welcome back</h2>
+      <form method="post" action="{{ url_for('login') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="login-email" data-i18n="email">Email</label>
+        <input id="login-email" name="email" type="email" autocomplete="email" maxlength="254" required>
+        <label for="login-password" data-i18n="password">Password</label>
+        <input id="login-password" name="password" type="password" maxlength="128" autocomplete="current-password" required>
+        <button class="btn primary" type="submit" data-i18n="signIn">Sign in</button>
+      </form>
+      <p class="auth-help" data-i18n="verifyBeforeSignIn">New accounts must verify their email before sign-in. Check your inbox and spam folder, or request another link below.</p>
+      <details class="auth-secondary">
+        <summary data-i18n="forgotPassword">Forgot your password?</summary>
+        <form method="post" action="{{ url_for('request_password_reset') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label for="reset-email" data-i18n="email">Email</label>
+          <input id="reset-email" name="email" type="email" autocomplete="email" maxlength="254" required>
+          <button class="btn" type="submit" data-i18n="sendResetLink">Send reset link</button>
+        </form>
+      </details>
+      <details class="auth-secondary">
+        <summary data-i18n="needVerificationEmail">Need another verification email?</summary>
+        <form method="post" action="{{ url_for('resend_verification') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label for="verify-email" data-i18n="email">Email</label>
+          <input id="verify-email" name="email" type="email" autocomplete="email" maxlength="254" required>
+          <button class="btn" type="submit" data-i18n="resendVerification">Resend verification</button>
+        </form>
+      </details>
+    </section>
+
+    <section class="auth-form-panel" data-auth-panel="register" {% if active_form != 'register' %}hidden{% endif %}>
+      <h2 data-i18n="createAccount">Create your account</h2>
+      <form method="post" action="{{ url_for('register') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="register-email" data-i18n="email">Email</label>
+        <input id="register-email" name="email" type="email" autocomplete="email" maxlength="254" required>
+        <label for="register-password" data-i18n="password">Password</label>
+        <input id="register-password" name="password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
+        <p class="auth-help"><span data-i18n="passwordRequirements">Use 12 to 128 characters.</span> <span data-i18n="verificationRequired">Email verification is required before signing in.</span></p>
+        <button class="btn primary" type="submit" data-i18n="createAccount">Create account</button>
+      </form>
+    </section>
+    {% endif %}
+    <p class="auth-footnote" data-i18n="authFootnote">Your account data is stored by this Ennoic server. Use a trusted deployment and a unique password.</p>
+  </main>
+</body>
+</html>

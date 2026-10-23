@@ -1,6 +1,11 @@
 test.py
 memory.jsonl
+tasks.sqlite3
+tasks.sqlite3-shm
+tasks.sqlite3-wal
 cloud_test.py
 __pycache__/
 *.py[cod]
 .env
+instance/
+*.sqlite3.legacy-backup-*

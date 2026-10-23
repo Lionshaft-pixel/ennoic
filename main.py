@@ -1,6 +1,8 @@
 import json
 import re
 from models import ASSISTANT_SYSTEM_PROMPT, ask_model, ask_cloud_model
+from task_management import maybe_handle_task_message
+import account_store
 
 ASSISTANT_OUTPUT_TOKEN_LIMIT = 8192
 MAX_HISTORY_MESSAGES = 12
@@ -110,19 +112,19 @@ def is_contextual_followup(message, history):
     return bool(CONTEXTUAL_FOLLOWUP_PATTERN.match(message.strip()))
 
 
-def process_message_with_metadata(message, history=None):
+def process_message_with_metadata(message, history=None, conversation_id=None, *, user_id=None):
     print("Thinking...")
-    memories = []
     conversation_history = normalize_conversation_history(history, message)
+    task_response = maybe_handle_task_message(
+        message,
+        conversation_history,
+        conversation_id,
+        user_id=user_id,
+    )
+    if task_response is not None:
+        return task_response
 
-    try:
-        with open("memory.jsonl", "r") as file:
-            for line in file:
-                line = line.strip()
-                if line:
-                    memories.append(json.loads(line))
-    except FileNotFoundError as e:
-        raise RuntimeError("Memory file 'memory.jsonl' was not found.") from e
+    memories = account_store.list_memories(user_id)
 
     model_mode = "cloud"
 
@@ -173,29 +175,7 @@ def process_message_with_metadata(message, history=None):
         truncated = completion["finish_reason"] == "length"
 
     elif mode == "remember":
-        memory = {
-            "person": person,
-            "object": object,
-            "time": time
-            }
-        
-        match = False
-
-        for m in memories:
-            if person == m["person"] and object == m["object"]:
-                match = True
-                m["time"] = time
-                print("Updated new info")
-
-        if match:
-            with open("memory.jsonl", "w", encoding="utf-8") as file:
-                for m in memories:
-                    file.write(json.dumps(m) + "\n")
-            response = "Updated existing memory"
-        else:
-            with open("memory.jsonl", "a", encoding="utf-8") as file:
-                file.write(json.dumps(memory) + "\n")
-        response = "Stored new memory"
+        response = account_store.remember(user_id, person, object, time)
 
     elif mode == "ask":
         intent = ai_data["intent"]
@@ -235,18 +215,9 @@ def process_message_with_metadata(message, history=None):
         print(response)
 
     elif mode == "forget":
-        new_memories = []
         object = ai_data["object"]
         person = ai_data["person"]
-
-        for m in memories:
-            if m["object"] != object or m["person"] != person:
-                new_memories.append(m)
-
-        with open("memory.jsonl", "w", encoding="utf-8") as file:
-            for m in new_memories:
-                file.write(json.dumps(m) + "\n")
-
+        account_store.forget_memory(user_id, person, object)
         response = "Memory deleted!"
 
     elif mode == "unknown":
@@ -269,6 +240,6 @@ def process_message_with_metadata(message, history=None):
     return {"reply": response, "truncated": truncated}
 
 
-def process_message(message, history=None):
+def process_message(message, history=None, *, user_id=None):
     """Keep the original string-returning helper available to existing callers."""
-    return process_message_with_metadata(message, history)["reply"]
+    return process_message_with_metadata(message, history, user_id=user_id)["reply"]
