@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ennoic Pricing</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --ink:#ffffff; --ink-soft:rgba(255,238,226,.86); --ink-dim:rgba(255,238,226,.7);
+  --glass:rgba(24,8,3,.62); --edge:rgba(255,190,120,.28); --accent:#f6e73b; --accent-ink:#1a1200; --warm:#ffd9a8;
+  --serif:'Instrument Serif','Times New Roman',serif; --sans:'Plus Jakarta Sans',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+.bg{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+html,body{margin:0}
+body{min-height:100vh;min-height:100dvh;position:relative;overflow-x:hidden;font-family:var(--sans);color:var(--ink);
+  background:linear-gradient(180deg,#040201 0%,#0c0301 30%,#3a0f03 55%,#a8380a 82%,#e8650f 100%);
+  padding-inline:max(16px,env(safe-area-inset-left,0px)) max(16px,env(safe-area-inset-right,0px))}
+.planet{position:absolute;left:50%;top:-1320px;width:1900px;height:1900px;margin-left:-950px;border-radius:50%;background:#030100;pointer-events:none;
+  box-shadow:inset 0 -3px 5px #fff1c0,inset 0 -14px 28px #ffb02e,inset 0 -70px 130px rgba(255,96,0,.8),0 14px 70px rgba(255,120,20,.65)}
+.glow{position:absolute;left:0;right:0;bottom:0;height:420px;pointer-events:none;background:radial-gradient(ellipse at 50% 100%,rgba(255,160,50,.55),rgba(255,110,20,0) 70%)}
+.ridge{position:absolute;left:0;right:0;bottom:0;height:84px;background:#0a0300;pointer-events:none;
+  clip-path:polygon(0 62%,8% 48%,17% 58%,27% 40%,38% 55%,49% 44%,60% 58%,71% 42%,82% 56%,91% 46%,100% 60%,100% 100%,0 100%)}
+.page{position:relative;z-index:1;max-width:1040px;margin:0 auto;padding-block:clamp(16px,3vh,32px) clamp(96px,16vh,150px);display:flex;flex-direction:column;gap:clamp(20px,5vh,56px)}
+.brand{font-size:22px;font-weight:700;letter-spacing:-.01em;color:var(--ink);text-decoration:none}
+.intro{display:flex;flex-direction:column;align-items:center;gap:18px;text-align:center}
+h1{margin:0;font-family:var(--serif);font-style:italic;font-weight:400;font-size:clamp(36px,6vw,76px);line-height:1.04;text-wrap:balance;max-width:16ch}
+.intro p{margin:0;max-width:46ch;font-size:17px;line-height:1.55;color:var(--ink-soft)}
+.plans{display:flex;flex-wrap:wrap;gap:24px;justify-content:center;align-items:stretch}
+.plan{flex:1 1 320px;max-width:480px;min-width:0;display:flex;flex-direction:column;gap:clamp(14px,2.4vh,22px);padding:clamp(20px,3.5vh,30px);border-radius:28px;
+  background:var(--glass);border:1px solid var(--edge);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);box-shadow:0 30px 80px rgba(0,0,0,.45)}
+.plan.pro{border-color:rgba(246,231,59,.55);box-shadow:0 30px 80px rgba(0,0,0,.45),0 0 0 1px rgba(246,231,59,.18)}
+.plan h2{margin:0;font-size:15px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--warm)}
+.price{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px;min-height:clamp(60px,10vh,84px)}
+.amount{font-family:var(--serif);font-style:italic;font-size:clamp(48px,9vh,68px);line-height:1;letter-spacing:-.01em}
+.per{font-size:16px;color:var(--ink-soft)}
+.sub{margin:-8px 0 0;font-size:13px;color:var(--ink-dim);min-height:1.4em}
+.skeleton{display:inline-block;width:150px;height:56px;border-radius:12px;background:rgba(255,255,255,.12);animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.45}}
+@media (prefers-reduced-motion:reduce){.skeleton{animation:none}}
+ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:clamp(8px,1.6vh,13px);flex:1}
+li{display:flex;gap:12px;align-items:flex-start;font-size:15px;line-height:1.45;color:var(--ink-soft)}
+li svg{flex:none;margin-top:2px}
+.btn{height:52px;border-radius:999px;border:0;font:inherit;font-size:16px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+.btn.main{background:var(--accent);color:var(--accent-ink);box-shadow:0 10px 34px rgba(246,231,59,.38)}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid rgba(255,206,160,.4)}
+.btn:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.msg{margin:0;min-height:1.5em;text-align:center;font-size:14px;line-height:1.5;color:var(--warm)}
+/* Short laptop screens: keep the whole page in view without scrolling. */
+@media (min-width:720px) and (max-height:1200px){
+  h1{max-width:none;font-size:clamp(34px,5.4vh,52px)}
+  .intro{gap:10px}
+  .intro p{font-size:15px;max-width:none}
+}
+@media (min-width:720px) and (max-height:820px){
+  .page{padding-bottom:72px}
+  li{font-size:14px}
+  .btn{height:46px}
+}
+@media (min-width:720px) and (max-height:760px){.page{padding-bottom:56px;gap:16px}.plan{padding:20px}}
+@media (max-width:480px){.plan{padding:22px}.per{font-size:15px}}
+.retry{background:none;border:0;padding:0;font:inherit;color:var(--accent);font-weight:700;text-decoration:underline;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="bg" aria-hidden="true">
+  <div class="planet"></div>
+  <div class="glow"></div>
+  <div class="ridge"></div>
+</div>
+
+<div class="page">
+  <a class="brand" href="/">Ennoic</a>
+
+  <header class="intro">
+    <h1>Simple pricing for intelligent automation</h1>
+    <p>Start free. Move to Pro when your workflows outgrow the free plan.</p>
+  </header>
+
+  <main>
+    <div class="plans">
+      <section class="plan" aria-labelledby="free-name">
+        <h2 id="free-name">Free</h2>
+        <div class="price"><span class="amount">Free</span></div>
+        <p class="sub">No payment needed.</p>
+        <ul id="free-features"></ul>
+        <a class="btn ghost" href="/signup">Start free</a>
+      </section>
+
+      <section class="plan pro" aria-labelledby="pro-name">
+        <h2 id="pro-name">Pro</h2>
+        <div class="price" aria-live="polite">
+          <span class="skeleton" id="price-skeleton" role="status" aria-label="Loading price"></span>
+          <span class="amount" id="price-amount" hidden></span>
+          <span class="per" id="price-per" hidden></span>
+        </div>
+        <p class="sub" id="price-sub">&nbsp;</p>
+        <ul id="pro-features"></ul>
+        <button class="btn main" id="upgrade" type="button" disabled>Upgrade to Pro</button>
+      </section>
+    </div>
+    <p class="msg" id="msg" role="status" style="margin-top:24px"></p>
+  </main>
+</div>
+
+<script>
+// Filled in by the server with the default USD price from pricing.config.js. It stays null if the file is opened without the server.
+var DEFAULT_PRICING = /*__DEFAULT_PRICING__*/null;
+</script>
+<script>
+// Feature lists are the same in every region. Edit them here.
+var FEATURES = {
+  free: ['Up to 3 active workflows', '100 automation runs a month', 'Core integrations', 'Community support'],
+  pro: ['Unlimited active workflows', '10,000 automation runs a month', 'All integrations', 'Run history and audit log', 'Priority support']
+};
+var CHECK = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f6e73b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+
+function fill(id, items) {
+  var ul = document.getElementById(id);
+  items.forEach(function (t) {
+    var li = document.createElement('li');
+    li.innerHTML = CHECK;
+    var s = document.createElement('span');
+    s.textContent = t;
+    li.appendChild(s);
+    ul.appendChild(li);
+  });
+}
+fill('free-features', FEATURES.free);
+fill('pro-features', FEATURES.pro);
+
+var $ = function (id) { return document.getElementById(id); };
+var pricing = null;
+
+function setMsg(html) { $('msg').innerHTML = html || ''; }
+
+function render() {
+  $('price-skeleton').hidden = true;
+  $('price-amount').hidden = false;
+  $('price-per').hidden = false;
+  $('price-amount').textContent = pricing.display;   // formatted by the server
+  $('price-per').textContent = '/' + pricing.period;
+  $('price-sub').textContent = 'Billed monthly.';
+  $('upgrade').disabled = false;
+}
+
+function load() {
+  setMsg('');
+  var ctl = new AbortController();
+  var timer = setTimeout(function () { ctl.abort(); }, 5000);
+  fetch('/api/pricing', { credentials: 'same-origin', signal: ctl.signal })
+    .then(function (r) { if (!r.ok) throw new Error('bad status'); return r.json(); })
+    .then(function (p) { if (!p || !p.display) throw new Error('bad body'); pricing = p; render(); })
+    .catch(function () {
+      // Price request failed or timed out: show the default USD price the server put in the page.
+      // Checkout still re-prices on the server and asks the visitor to confirm if it differs.
+      if (DEFAULT_PRICING && DEFAULT_PRICING.display) { pricing = DEFAULT_PRICING; render(); return; }
+      $('price-skeleton').hidden = true;
+      $('price-sub').textContent = 'Price unavailable.';
+      setMsg('We could not load the price. <button class="retry" id="retry" type="button">Try again</button>');
+      $('retry').onclick = function () { $('price-skeleton').hidden = false; $('price-sub').innerHTML = '&nbsp;'; load(); };
+    })
+    .then(function () { clearTimeout(timer); });
+}
+
+$('upgrade').onclick = function () {
+  var btn = $('upgrade');
+  btn.disabled = true;
+  setMsg('');
+  // Only the plan id and the signed quote are sent. The server decides the price.
+  fetch('/api/checkout', {
+    method: 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plan: pricing.plan, quote: pricing.quote })
+  }).then(function (r) {
+    return r.json().then(function (j) { return { status: r.status, body: j }; });
+  }).then(function (res) {
+    if (res.status === 200 && res.body.url) { window.location.href = res.body.url; return; }
+    if (res.status === 409 && res.body.pricing) {
+      pricing = res.body.pricing; render();
+      setMsg('Your price is now ' + pricing.display + '/' + pricing.period + '. Check it and select Upgrade again.');
+      return;
+    }
+    if (res.status === 501) { setMsg('Checkout is not available yet. Nothing was charged.'); btn.disabled = false; return; }
+    setMsg('Something went wrong. Nothing was charged. Please try again.');
+    btn.disabled = false;
+  }).catch(function () {
+    setMsg('Something went wrong. Nothing was charged. Please try again.');
+    btn.disabled = false;
+  });
+};
+
+load();
+</script>
+</body>
+</html>

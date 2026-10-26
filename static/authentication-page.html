@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ennoic Sign In</title>
+<script src="9fbba84c-fcba-40ba-8348-b66d3b218671"></script>
+<meta name="hz:slide-selector" content="[data-canvas-width]">
+<meta name="hz:canvas-width" content="1440">
+<meta name="hz:canvas-height" content="900">
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>/* latin-ext */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/instrumentserif/v5/jizHRFtNs2ka5fXjeivQ4LroWlx-6zAjgn7MsNo.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("95a5a090-d16f-4308-8ebd-22b222f4bac7") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/instrumentserif/v5/jizBRFtNs2ka5fXjeivQ4LroWlx-6zsTjmbI.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/instrumentserif/v5/jizBRFtNs2ka5fXjeivQ4LroWlx-6zUTjg.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko70yyygA.woff2) format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko50yyygA.woff2) format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko40yyygA.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("a74d4af5-5356-4ba0-ae67-8672d655e457") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko70yyygA.woff2) format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko50yyygA.woff2) format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko40yyygA.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("a74d4af5-5356-4ba0-ae67-8672d655e457") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko70yyygA.woff2) format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko50yyygA.woff2) format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko40yyygA.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("a74d4af5-5356-4ba0-ae67-8672d655e457") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko70yyygA.woff2) format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko50yyygA.woff2) format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko40yyygA.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("a74d4af5-5356-4ba0-ae67-8672d655e457") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+</style>
+<style>
+body{margin:0;background:#040201}
+a{color:inherit}
+a:hover{opacity:.8}
+button{font-family:inherit;cursor:pointer}
+input::placeholder{color:rgba(255,230,210,.55)}
+input:focus{outline:none;border-color:#f6e73b !important;box-shadow:0 0 0 3px rgba(246,231,59,.25)}
+button:focus-visible,a:focus-visible{outline:2px solid #f6e73b;outline-offset:3px}
+input[type=checkbox]{accent-color:#f6e73b;width:18px;height:18px;margin:0}
+</style>
+<style>
+html,
+body {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+}
+
+body [data-canvas-width] {
+  width: 100% !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  min-height: 0 !important;
+  max-height: 100dvh !important;
+  overflow: hidden !important;
+}
+
+body [data-canvas-width] > main {
+  min-height: 0 !important;
+  padding: clamp(12px, 4vh, 40px) clamp(16px, 4vw, 40px) !important;
+  gap: clamp(20px, 4vw, 56px) !important;
+}
+
+@media (max-width: 760px), (max-height: 600px) {
+  body [data-canvas-width] > main {
+    justify-content: center !important;
+    padding: 12px !important;
+  }
+
+  body [data-canvas-width] > main > section:first-child {
+    display: none !important;
+  }
+
+  body [data-canvas-width] > main > section[aria-label="Account access"] {
+    width: 100% !important;
+    max-width: 460px !important;
+    flex: 0 1 460px !important;
+    padding: 18px !important;
+  }
+}
+
+@media (max-height: 720px) {
+  body [data-canvas-width] > main {
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
+    gap: 16px !important;
+  }
+
+  body [data-canvas-width] > main > section[aria-label="Account access"] {
+    padding: 18px !important;
+  }
+
+  body [data-canvas-width] > main > section[aria-label="Account access"] > div:first-child {
+    margin-bottom: 12px !important;
+  }
+
+  body [data-canvas-width] > main > section[aria-label="Account access"] form {
+    gap: 10px !important;
+  }
+
+  body [data-canvas-width] > main > section[aria-label="Account access"] form > div {
+    gap: 5px !important;
+  }
+
+  body [data-canvas-width] > main > section[aria-label="Account access"] input:not([type="checkbox"]) {
+    height: 42px !important;
+  }
+
+  body [data-canvas-width] > main > section[aria-label="Account access"] form > button[type="submit"] {
+    height: 46px !important;
+  }
+}
+
+@media (max-height: 520px) {
+  body [data-canvas-width] > main > section[aria-label="Account access"] {
+    padding: 8px !important;
+  }
+
+  body [data-canvas-width] > main > section[aria-label="Account access"] > div:first-child {
+    margin-bottom: 6px !important;
+  }
+
+  body [data-canvas-width] > main > section[aria-label="Account access"] form {
+    gap: 4px !important;
+  }
+
+  body [data-canvas-width] > main > section[aria-label="Account access"] form > div {
+    gap: 3px !important;
+  }
+
+  body [data-canvas-width] > main > section[aria-label="Account access"] input:not([type="checkbox"]) {
+    height: 34px !important;
+  }
+
+  body [data-canvas-width] > main > section[aria-label="Account access"] form > button[type="submit"] {
+    height: 38px !important;
+  }
+
+  body [data-canvas-width] > main {
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+  }
+}
+
+@media (max-width: 360px) {
+  body [data-canvas-width] > main > section[aria-label="Account access"] {
+    padding: 12px !important;
+  }
+
+  body [data-canvas-width] > main > section[aria-label="Account access"] > div:first-child {
+    margin-bottom: 8px !important;
+  }
+
+  body [data-canvas-width] > main > section[aria-label="Account access"] form {
+    gap: 6px !important;
+  }
+
+  body [data-canvas-width] > main > section[aria-label="Account access"] form > div:last-of-type button {
+    flex-basis: 100px !important;
+    gap: 6px !important;
+    font-size: 12px !important;
+  }
+}
+</style>
+</helmet>
+<div style="position: relative; overflow: hidden; min-height: 900px; box-sizing: border-box; display: flex; flex-direction: column; background: linear-gradient(180deg, #040201 0%, #0c0301 30%, #3a0f03 55%, #a8380a 82%, #e8650f 100%); font-family: 'Plus Jakarta Sans', system-ui, sans-serif; color: #ffffff" data-canvas-width="1440" data-canvas-height="900" data-document-role="page" data-label="Sign in / Sign up">
+
+<div aria-hidden="true" style="position: absolute; left: 50%; top: -1320px; width: 1900px; height: 1900px; margin-left: -950px; border-radius: 50%; background: #030100; box-shadow: inset 0 -3px 5px #fff1c0, inset 0 -14px 28px #ffb02e, inset 0 -70px 130px rgba(255, 96, 0, 0.8), 0 14px 70px rgba(255, 120, 20, 0.65)"></div>
+<div aria-hidden="true" style="position: absolute; left: 0; right: 0; bottom: 0; height: 420px; background: radial-gradient(ellipse at 50% 100%, rgba(255, 160, 50, 0.55) 0%, rgba(255, 110, 20, 0) 70%)"></div>
+<div aria-hidden="true" style="position: absolute; left: 0; right: 0; bottom: 0; height: 84px; background: #0a0300; clip-path: polygon(0 62%, 8% 48%, 17% 58%, 27% 40%, 38% 55%, 49% 44%, 60% 58%, 71% 42%, 82% 56%, 91% 46%, 100% 60%, 100% 100%, 0 100%)"></div>
+
+<main style="position: relative; z-index: 2; flex: 1; box-sizing: border-box; width: 100%; max-width: 1200px; margin: 0 auto; padding: 72px 40px 150px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 56px">
+
+<section style="flex: 1 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 28px">
+<h1 style="margin: 0; font-family: 'Instrument Serif', 'Times New Roman', serif; font-style: italic; font-weight: 400; font-size: clamp(46px, 6.2vw, 80px); line-height: 1.02; letter-spacing: -0.01em; color: #ffffff; text-wrap: balance">{{headline}}</h1>
+<p style="margin: 0; max-width: 46ch; font-size: 17px; line-height: 1.55; color: rgba(255, 238, 226, 0.88)">{{intro}}</p>
+</section>
+
+<section style="flex: 1 1 380px; min-width: 0; max-width: 460px; box-sizing: border-box; padding: 28px; border-radius: 28px; background: rgba(24, 8, 3, 0.62); border: 1px solid rgba(255, 190, 120, 0.28); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45)" aria-label="Account access">
+
+<div style="display: flex; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(0, 0, 0, 0.4); margin-bottom: 24px">
+<button type="button" sc-camel-on-click="{{ toSignin }}" aria-pressed="{{ isSignin }}" style="{{ tabSigninStyle }}">Sign in</button>
+<button type="button" sc-camel-on-click="{{ toSignup }}" aria-pressed="{{ isSignup }}" style="{{ tabSignupStyle }}">Sign up</button>
+</div>
+
+<sc-if value="{{ isDone }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 16px; padding: 12px 0 8px">
+<h2 style="margin: 0; font-family: 'Instrument Serif', 'Times New Roman', serif; font-style: italic; font-weight: 400; font-size: 44px; line-height: 1.05">{{doneTitle}}</h2>
+<p style="margin: 0; font-size: 15px; line-height: 1.55; color: rgba(255, 238, 226, 0.88)">{{doneText}}</p>
+<button type="button" sc-camel-on-click="{{ reset }}" style="height: 48px; margin-top: 8px; border-radius: 999px; border: 1px solid rgba(255, 206, 160, 0.4); background: transparent; color: #ffffff; font-size: 15px; font-weight: 600">Back to the form</button>
+</div>
+</sc-if>
+
+<sc-if value="{{ isForm }}" hint-placeholder-val="{{ true }}">
+<form sc-camel-on-submit="{{ submit }}" style="display: flex; flex-direction: column; gap: 16px">
+
+<sc-if value="{{ isSignup }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<label for="name" style="font-size: 13px; font-weight: 600; color: rgba(255, 238, 226, 0.92)">Full name</label>
+<input id="name" type="text" autocomplete="name" placeholder="Your name" style="height: 48px; box-sizing: border-box; padding: 0 16px; border-radius: 14px; border: 1px solid rgba(255, 206, 160, 0.3); background: rgba(8, 3, 1, 0.55); color: #ffffff; font-family: inherit; font-size: 15px">
+</div>
+</sc-if>
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<label for="email" style="font-size: 13px; font-weight: 600; color: rgba(255, 238, 226, 0.92)">Email</label>
+<input id="email" type="email" autocomplete="email" placeholder="you@company.com" style="height: 48px; box-sizing: border-box; padding: 0 16px; border-radius: 14px; border: 1px solid rgba(255, 206, 160, 0.3); background: rgba(8, 3, 1, 0.55); color: #ffffff; font-family: inherit; font-size: 15px">
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<label for="password" style="font-size: 13px; font-weight: 600; color: rgba(255, 238, 226, 0.92)">Password</label>
+<div style="position: relative">
+<input id="password" type="{{ pwType }}" autocomplete="current-password" placeholder="At least 8 characters" style="width: 100%; height: 48px; box-sizing: border-box; padding: 0 76px 0 16px; border-radius: 14px; border: 1px solid rgba(255, 206, 160, 0.3); background: rgba(8, 3, 1, 0.55); color: #ffffff; font-family: inherit; font-size: 15px">
+<button type="button" sc-camel-on-click="{{ togglePw }}" aria-label="{{ pwAria }}" style="position: absolute; right: 6px; top: 6px; height: 36px; padding: 0 12px; border-radius: 10px; border: 0; background: transparent; color: #ffd9a8; font-size: 13px; font-weight: 600">{{pwLabel}}</button>
+</div>
+</div>
+
+<sc-if value="{{ isSignin }}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px">
+<label for="keep" style="display: inline-flex; align-items: center; gap: 10px; font-size: 13px; color: rgba(255, 238, 226, 0.9)"><input id="keep" type="checkbox">Keep me signed in</label>
+<a href="#" style="font-size: 13px; font-weight: 600; color: #ffd9a8">Forgot password?</a>
+</div>
+</sc-if>
+
+<button type="submit" style="height: 52px; margin-top: 4px; border-radius: 999px; border: 0; background: #f6e73b; color: #1a1200; font-size: 16px; font-weight: 700; box-shadow: 0 10px 34px rgba(246, 231, 59, 0.38)">{{submitLabel}}</button>
+
+<div style="display: flex; align-items: center; gap: 12px; color: rgba(255, 238, 226, 0.7); font-size: 12px" aria-hidden="true">
+<span style="flex: 1; height: 1px; background: rgba(255, 206, 160, 0.25)"></span>
+<span>or continue with</span>
+<span style="flex: 1; height: 1px; background: rgba(255, 206, 160, 0.25)"></span>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 10px">
+<a href="/auth/google" style="flex: 1 1 140px; height: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 10px; border-radius: 14px; border: 1px solid rgba(255, 206, 160, 0.3); background: rgba(255, 255, 255, 0.06); color: #ffffff; font-size: 14px; font-weight: 600; text-decoration: none"><span aria-hidden="true" style="width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid #ffd9a8; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700">G</span>Continue with Google</a>
+</div>
+
+<p style="margin: 4px 0 0; text-align: center; font-size: 13px; color: rgba(255, 238, 226, 0.85)">{{switchPrompt}} <a href="#" sc-camel-on-click="{{ switchMode }}" style="color: #f6e73b; font-weight: 700">{{switchLink}}</a></p>
+
+</form>
+</sc-if>
+
+</section>
+
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
+class Component extends DCLogic {
+renderVals() {
+const s = Object.assign({ mode: 'signin', showPw: false, done: false }, this.state);
+const signup = s.mode === 'signup';
+const tabBase = 'flex: 1; height: 44px; border-radius: 999px; border: 0; font-size: 14px; font-weight: 600; ';
+const on = 'background: #ffffff; color: #140a05;';
+const off = 'background: transparent; color: rgba(255, 238, 226, 0.85);';
+return {
+isSignin: !signup,
+isSignup: signup,
+isDone: s.done,
+isForm: !s.done,
+headline: signup ? 'From manual processes to intelligent automation' : 'Pick up where your automations left off',
+intro: signup
+? 'Create your workspace in a minute and connect the first workflow today.'
+: 'Sign in to see your running workflows, review what ran overnight and keep building.',
+tabSigninStyle: tabBase + (signup ? off : on),
+tabSignupStyle: tabBase + (signup ? on : off),
+pwType: s.showPw ? 'text' : 'password',
+pwLabel: s.showPw ? 'Hide' : 'Show',
+pwAria: s.showPw ? 'Hide password' : 'Show password',
+submitLabel: signup ? 'Create account' : 'Sign in',
+switchPrompt: signup ? 'Already have an account?' : 'New to ennoic?',
+switchLink: signup ? 'Sign in' : 'Create an account',
+doneTitle: signup ? 'Account created.' : 'You are in.',
+doneText: signup
+? 'Check your inbox to confirm your email.'
+: 'Opening your workspace now.',
+toSignin: () => this.setState({ mode: 'signin', done: false }),
+toSignup: () => this.setState({ mode: 'signup', done: false }),
+switchMode: (e) => {
+if (e && e.preventDefault) e.preventDefault();
+this.setState({ mode: signup ? 'signin' : 'signup', done: false });
+},
+togglePw: () => this.setState({ showPw: !s.showPw }),
+submit: (e) => {
+if (e && e.preventDefault) e.preventDefault();
+this.setState({ done: true });
+},
+reset: () => this.setState({ done: false })
+};
+}
+}
+</script>
+
+
+</body></html>

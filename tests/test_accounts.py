@@ -231,13 +231,25 @@ class AccountAuthenticationTests(AccountTestCase):
         client = app.app.test_client()
         response = client.get("/")
         self.assertEqual(response.status_code, 200)
-        embedded_page = re.search(
-            rb'<script type="__bundler/template">\s*(.*?)\s*</script>',
-            response.data,
-            re.S,
+        self.assertIn(b"landing-page.html", response.data)
+        self.assertIn(b"landing-manifest.json", response.data)
+        landing_source = client.get("/static/landing-page.html")
+        self.addCleanup(landing_source.close)
+        self.assertEqual(landing_source.status_code, 200)
+        landing_page = landing_source.get_data(as_text=True)
+        self.assertGreater(len(landing_page.splitlines()), 100)
+        self.assertIn(
+            'href="https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap"',
+            landing_page,
         )
-        self.assertIsNotNone(embedded_page)
-        landing_page = json.loads(embedded_page.group(1))
+        self.assertIn(
+            '#benefits h2,#benefits h3,#modes h2,#modes h3,#setup h2,#start h2',
+            landing_page,
+        )
+        landing_manifest = client.get("/static/landing-manifest.json")
+        self.addCleanup(landing_manifest.close)
+        self.assertEqual(landing_manifest.status_code, 200)
+        self.assertEqual(len(landing_manifest.get_json()), 13)
         nonce = re.search(rb'<script nonce="([^"]+)">', response.data)
         self.assertIsNotNone(nonce)
         self.assertIn(
@@ -256,6 +268,20 @@ class AccountAuthenticationTests(AccountTestCase):
         login_page = client.get("/login")
         self.assertEqual(login_page.status_code, 200)
         self.assertIn(b"auth-integration.js", login_page.data)
+        self.assertIn(b"authentication-page.html", login_page.data)
+        self.assertIn(b"authentication-manifest.json", login_page.data)
+        auth_source = client.get("/static/authentication-page.html")
+        self.addCleanup(auth_source.close)
+        self.assertEqual(auth_source.status_code, 200)
+        auth_page = auth_source.get_data(as_text=True)
+        self.assertGreater(len(auth_page.splitlines()), 300)
+        self.assertIn("overflow: hidden", auth_page)
+        self.assertIn("@media (max-width: 760px)", auth_page)
+        self.assertIn("display: none !important", auth_page)
+        auth_manifest = client.get("/static/authentication-manifest.json")
+        self.addCleanup(auth_manifest.close)
+        self.assertEqual(auth_manifest.status_code, 200)
+        self.assertEqual(len(auth_manifest.get_json()), 5)
         nonce = re.search(rb'<script nonce="([^"]+)">', login_page.data)
         self.assertIsNotNone(nonce)
         self.assertIn(

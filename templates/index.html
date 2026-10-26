@@ -19,7 +19,7 @@
 <body>
   <a class="skip-link" href="#composer-input" data-i18n="skipToMessage">Skip to message box</a>
 
-  <div class="app ennoic-app" id="app" data-user-id="{{ user.id }}" data-sidebar="open" data-task-panel="open">
+  <div class="app ennoic-app" id="app" data-user-id="{{ user.id }}" data-user-email="{{ user.email }}" data-sidebar="open" data-task-panel="open">
     <nav class="rail" aria-label="Primary navigation">
       <button class="nav" id="toggle-sidebar" type="button" aria-label="Collapse sidebar" title="Collapse sidebar" aria-controls="sidebar" aria-expanded="true" data-i18n-aria-label="collapseSidebar" data-i18n-title="collapseSidebar">
         <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
@@ -153,6 +153,11 @@
       </select>
       <p id="language-description" data-i18n="languageExplanation">This changes the interface language. AI-generated replies are not automatically translated.</p>
       <p class="settings-status" id="settings-status" role="status" aria-live="polite"></p>
+    </section>
+    <section class="settings-section" aria-labelledby="settings-account-title">
+      <h3 id="settings-account-title" data-i18n="settingsAccount">Account</h3>
+      <p data-i18n="deleteAccountExplanation">Deleting your account permanently removes its tasks, conversations, memories, and account details from this server.</p>
+      <button class="btn danger" id="delete-account" type="button" data-i18n="deleteAccount">Delete account</button>
     </section>
     <div class="dialog-actions">
       <form id="sign-out-form" method="post" action="{{ url_for('logout') }}">

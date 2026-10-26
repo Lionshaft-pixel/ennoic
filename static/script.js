@@ -23,6 +23,7 @@ const els = {
   form: $("composer"), input: $("composer-input"), send: $("send"),
   settings: $("settings"), openSettings: $("open-settings"),
   languageSelect: $("language-select"), settingsStatus: $("settings-status"),
+  deleteAccount: $("delete-account"),
   signOutForm: $("sign-out-form"),
   taskFilters: $("task-filters"), taskSearch: $("task-search"), taskList: $("task-list"),
   taskStatus: $("task-status"), createTask: $("create-task"), taskEditor: $("task-editor"),
@@ -1115,6 +1116,27 @@ els.languageSelect.addEventListener("change", () => {
 });
 els.signOutForm.addEventListener("submit", (event) => {
   if (!window.confirm(t("signOutConfirm"))) event.preventDefault();
+});
+els.deleteAccount.addEventListener("click", async () => {
+  if (!window.confirm(t("deleteAccountConfirm"))) return;
+  const typedEmail = window.prompt(t("deleteAccountPrompt", { email: els.app.dataset.userEmail }));
+  if (typedEmail === null) return;
+  els.deleteAccount.disabled = true;
+  els.settingsStatus.textContent = "";
+  try {
+    await requestJSON("/api/account", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: typedEmail }),
+    });
+    for (const key of [STORAGE_KEY, ACTIVE_ID_KEY, LANGUAGE_KEY]) {
+      try { localStorage.removeItem(key); } catch { /* the server account is already deleted */ }
+    }
+    window.location.assign("/login?deletion=scheduled");
+  } catch (error) {
+    els.settingsStatus.textContent = error.message || t("deleteAccountFailed");
+    els.deleteAccount.disabled = false;
+  }
 });
 
 /* ---------- Start ---------- */

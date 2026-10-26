@@ -5,7 +5,7 @@ import os
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -52,7 +52,9 @@ def initialize():
                 email_verified INTEGER NOT NULL DEFAULT 0 CHECK (email_verified IN (0, 1)),
                 created_at TEXT NOT NULL,
                 password_changed_at TEXT,
-                auth_version INTEGER NOT NULL DEFAULT 0
+                auth_version INTEGER NOT NULL DEFAULT 0,
+                deleted_at TEXT,
+                purge_after TEXT
             )
             """
         )
@@ -61,6 +63,42 @@ def initialize():
         }
         if "auth_version" not in user_columns:
             db.execute("ALTER TABLE users ADD COLUMN auth_version INTEGER NOT NULL DEFAULT 0")
+        if "deleted_at" not in user_columns:
+            db.execute("ALTER TABLE users ADD COLUMN deleted_at TEXT")
+        if "purge_after" not in user_columns:
+            db.execute("ALTER TABLE users ADD COLUMN purge_after TEXT")
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS account_deletion_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_ref TEXT NOT NULL,
+                email TEXT NOT NULL,
+                requested_at TEXT NOT NULL,
+                client_ip TEXT,
+                purge_after TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                cancelled_at TEXT,
+                purged_at TEXT
+            )
+            """
+        )
+        audit_columns = {
+            row["name"] for row in db.execute("PRAGMA table_info(account_deletion_audit)").fetchall()
+        }
+        if "purged_at" not in audit_columns:
+            db.execute("ALTER TABLE account_deletion_audit ADD COLUMN purged_at TEXT")
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS users_pending_account_deletions "
+            "ON users(purge_after) WHERE deleted_at IS NOT NULL"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS account_deletion_audit_expiry "
+            "ON account_deletion_audit(expires_at)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS account_deletion_audit_lookup "
+            "ON account_deletion_audit(account_ref, requested_at DESC)"
+        )
         db.execute(
             """
             CREATE TABLE IF NOT EXISTS account_tokens (
@@ -186,7 +224,7 @@ def create_user(email, password):
 def get_user(user_id):
     with connection() as db:
         row = db.execute(
-            "SELECT id, email, password_hash, email_verified, created_at, password_changed_at, auth_version "
+            "SELECT id, email, password_hash, email_verified, created_at, password_changed_at, auth_version, deleted_at, purge_after "
             "FROM users WHERE id = ?",
             (user_id,),
         ).fetchone()
@@ -197,11 +235,104 @@ def get_user_by_email(email):
     normalized = normalize_email(email)
     with connection() as db:
         row = db.execute(
-            "SELECT id, email, password_hash, email_verified, created_at, password_changed_at, auth_version "
+            "SELECT id, email, password_hash, email_verified, created_at, password_changed_at, auth_version, deleted_at, purge_after "
             "FROM users WHERE email = ?",
             (normalized,),
         ).fetchone()
     return dict(row) if row else None
+
+
+def schedule_user_deletion(user_id, client_ip, *, grace_days=30, audit_retention_days=90):
+    now = datetime.now(timezone.utc)
+    requested_at = now.isoformat()
+    purge_after = (now + timedelta(days=grace_days)).isoformat()
+    expires_at = (now + timedelta(days=grace_days + audit_retention_days)).isoformat()
+    account_ref = hashlib.sha256(user_id.encode("utf-8")).hexdigest()
+    with connection() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute("SELECT email, deleted_at, purge_after FROM users WHERE id = ?", (user_id,)).fetchone()
+        if row is None:
+            return None
+        if row["deleted_at"]:
+            return {"email": row["email"], "purge_after": row["purge_after"], "already_scheduled": True}
+        db.execute(
+            "UPDATE users SET deleted_at = ?, purge_after = ?, auth_version = auth_version + 1 WHERE id = ?",
+            (requested_at, purge_after, user_id),
+        )
+        db.execute("DELETE FROM account_tokens WHERE user_id = ?", (user_id,))
+        db.execute(
+            "INSERT INTO account_deletion_audit "
+            "(account_ref, email, requested_at, client_ip, purge_after, expires_at, cancelled_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, NULL)",
+            (account_ref, row["email"], requested_at, client_ip, purge_after, expires_at),
+        )
+    return {"email": row["email"], "purge_after": purge_after, "already_scheduled": False}
+
+
+def get_scheduled_deletion(user_id):
+    account_ref = hashlib.sha256(user_id.encode("utf-8")).hexdigest()
+    with connection() as db:
+        row = db.execute(
+            "SELECT email, deleted_at, purge_after FROM users WHERE id = ? AND deleted_at IS NOT NULL",
+            (user_id,),
+        ).fetchone()
+        if row:
+            return dict(row)
+        row = db.execute(
+            "SELECT email, requested_at AS deleted_at, purge_after, cancelled_at, purged_at, expires_at "
+            "FROM account_deletion_audit WHERE account_ref = ? ORDER BY requested_at DESC LIMIT 1",
+            (account_ref,),
+        ).fetchone()
+    if row and row["cancelled_at"] is None and row["expires_at"] > _now():
+        return dict(row)
+    return None
+
+
+def cancel_user_deletion(user_id):
+    account_ref = hashlib.sha256(user_id.encode("utf-8")).hexdigest()
+    with connection() as db:
+        db.execute("BEGIN IMMEDIATE")
+        cursor = db.execute(
+            "UPDATE users SET deleted_at = NULL, purge_after = NULL, auth_version = auth_version + 1 "
+            "WHERE id = ? AND deleted_at IS NOT NULL AND purge_after > ?",
+            (user_id, _now()),
+        )
+        if cursor.rowcount:
+            cancelled_at = _now()
+            db.execute(
+                "UPDATE account_deletion_audit SET cancelled_at = ?, expires_at = ? "
+                "WHERE id = (SELECT id FROM account_deletion_audit "
+                "WHERE account_ref = ? AND cancelled_at IS NULL ORDER BY requested_at DESC LIMIT 1)",
+                (cancelled_at, (datetime.fromisoformat(cancelled_at) + timedelta(days=90)).isoformat(), account_ref),
+            )
+    return cursor.rowcount == 1
+
+
+def purge_due_deletions(*, limit=25):
+    now = _now()
+    purged = 0
+    with connection() as db:
+        db.execute("BEGIN IMMEDIATE")
+        ids = [row["id"] for row in db.execute(
+            "SELECT id FROM users WHERE deleted_at IS NOT NULL AND purge_after <= ? LIMIT ?",
+            (now, limit),
+        ).fetchall()]
+        for user_id in ids:
+            account_ref = hashlib.sha256(user_id.encode("utf-8")).hexdigest()
+            purged_at = datetime.now(timezone.utc)
+            db.execute(
+                "UPDATE account_deletion_audit SET purged_at = ?, expires_at = ? "
+                "WHERE id = (SELECT id FROM account_deletion_audit "
+                "WHERE account_ref = ? AND cancelled_at IS NULL AND purged_at IS NULL "
+                "ORDER BY requested_at DESC LIMIT 1)",
+                (purged_at.isoformat(), (purged_at + timedelta(days=90)).isoformat(), account_ref),
+            )
+            for table in ("account_tokens", "task_proposals", "tasks", "conversations", "memories"):
+                db.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
+            db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            purged += 1
+        db.execute("DELETE FROM account_deletion_audit WHERE expires_at <= ?", (now,))
+    return purged
 
 
 def verify_password(user, password):

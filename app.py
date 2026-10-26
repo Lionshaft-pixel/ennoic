@@ -1,12 +1,15 @@
+import base64
 import hashlib
 import os
 import secrets
 import smtplib
 import ssl
-from threading import Lock
+from threading import Event, Lock, Thread
 from email.message import EmailMessage
 from pathlib import Path
 from urllib.parse import urljoin
+
+import requests
 
 from flask import Flask, g, jsonify, redirect, render_template, request, session, url_for
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
@@ -72,6 +75,9 @@ login_manager.session_protection = "strong"
 limiter = Limiter(get_remote_address, app=app, default_limits=[])
 _initialized_databases = set()
 _database_initialization_lock = Lock()
+_account_deletion_worker_lock = Lock()
+_account_deletion_worker_started = False
+_account_deletion_worker_stop = Event()
 _dummy_password_hash = generate_password_hash(
     secrets.token_urlsafe(32),
     method="pbkdf2:sha256:600000",
@@ -89,7 +95,7 @@ class Account(UserMixin):
 @login_manager.user_loader
 def load_user(user_id):
     record = account_store.get_user(user_id)
-    if record is None or not record["email_verified"]:
+    if record is None or not record["email_verified"] or record["deleted_at"] is not None:
         return None
     if session.get("account_auth_version") != record["auth_version"]:
         return None
@@ -110,6 +116,27 @@ def initialize_database():
         if path not in _initialized_databases:
             account_store.initialize()
             _initialized_databases.add(path)
+    if not app.testing:
+        _start_account_deletion_worker()
+
+
+def _run_account_deletion_worker():
+    while not _account_deletion_worker_stop.is_set():
+        try:
+            account_store.purge_due_deletions()
+        except Exception:
+            app.logger.exception("account_deletion_purge_failed")
+        _account_deletion_worker_stop.wait(60)
+
+
+def _start_account_deletion_worker():
+    global _account_deletion_worker_started
+    with _account_deletion_worker_lock:
+        if _account_deletion_worker_started:
+            return
+        worker = Thread(target=_run_account_deletion_worker, name="ennoic-account-deletion", daemon=True)
+        worker.start()
+        _account_deletion_worker_started = True
 
 
 @app.after_request
@@ -196,10 +223,11 @@ def _consume_email_token(token, purpose, *, max_age):
     token_hash = hashlib.sha256(nonce.encode("ascii")).hexdigest()
     if not account_store.consume_account_token(user_id, token_hash, purpose):
         return None
-    return account_store.get_user(user_id)
+    user = account_store.get_user(user_id)
+    return user if user and user["deleted_at"] is None else None
 
 
-def _send_account_email(recipient, subject, body):
+def _send_account_email(recipient, subject, body, html_body=None, inline_images=()):
     host = _environment_value("ENNOIC_SMTP_HOST", "SMTP_HOST")
     sender = _environment_value("ENNOIC_SMTP_FROM", "SMTP_FROM_EMAIL", "SMTP_FROM")
     if not host or not sender:
@@ -211,6 +239,16 @@ def _send_account_email(recipient, subject, body):
     message["From"] = sender
     message["To"] = recipient
     message.set_content(body)
+    if html_body:
+        message.add_alternative(html_body, subtype="html")
+        html_part = message.get_payload()[-1]
+        for content_id, image_path, subtype in inline_images:
+            html_part.add_related(
+                Path(image_path).read_bytes(),
+                maintype="image",
+                subtype=subtype,
+                cid=f"<{content_id}>",
+            )
     port = int(_environment_value("ENNOIC_SMTP_PORT", "SMTP_PORT", default="587"))
     context = ssl.create_default_context()
     use_ssl = _environment_value(
@@ -272,6 +310,18 @@ def _email_delivery_configured():
     )
 
 
+def _google_oauth_value(name):
+    return _environment_value(f"ENNOIC_GOOGLE_{name}", f"GOOGLE_{name}")
+
+
+def _google_oauth_configured():
+    return bool(_google_oauth_value("CLIENT_ID") and _google_oauth_value("CLIENT_SECRET"))
+
+
+def _google_login_error(message, status=400):
+    return _auth_template(auth_error=message), status
+
+
 def _send_token_email(user, purpose):
     if not _email_delivery_configured():
         app.logger.error(
@@ -285,15 +335,30 @@ def _send_token_email(user, purpose):
         relative_url = url_for("verify_email", token=token)
         subject = "Verify your Ennoic account"
         body = "Verify your Ennoic account by opening this link within 1 hour:\n\n{link}\n"
+        html_body = None
+        inline_images = ()
     else:
         relative_url = url_for("reset_password", token=token)
         subject = "Reset your Ennoic password"
-        body = "Reset your Ennoic password within 30 minutes:\n\n{link}\n\nIf you did not request this, ignore this email."
+        body = (
+            "Reset your Ennoic password within 30 minutes by opening this link:\n\n"
+            "{link}\n\nIf you did not request this, you can ignore this email."
+        )
+        html_body = None
+        inline_images = ((
+            "ennoic-logo",
+            Path(app.static_folder) / "email" / "ennoic-logo.png",
+            "png",
+        ),)
     link = urljoin(configured_url.rstrip("/") + "/", relative_url.lstrip("/"))
     body = body.format(link=link)
+    if purpose != "verify":
+        html_body = render_template("password_reset_email.html", reset_url=link)
     app.logger.info("account_email_delivery_started purpose=%s", purpose)
     try:
-        sent = _send_account_email(user["email"], subject, body)
+        sent = _send_account_email(
+            user["email"], subject, body, html_body=html_body, inline_images=inline_images
+        )
         if sent:
             app.logger.info("account_email_delivery_succeeded purpose=%s", purpose)
         return sent
@@ -347,7 +412,118 @@ def login_page():
     if current_user.is_authenticated:
         return redirect(url_for("home"))
     active_form = "register" if request.args.get("form") == "register" else "login"
-    return _auth_template(active_form=active_form)
+    auth_notice = (
+        "Account deletion is scheduled. Sign in again within 30 days to restore your account."
+        if request.args.get("deletion") == "scheduled"
+        else None
+    )
+    return _auth_template(active_form=active_form, auth_notice=auth_notice)
+
+
+@app.route("/auth/google")
+def google_login():
+    if current_user.is_authenticated:
+        return redirect(url_for("home"))
+    if not _google_oauth_configured():
+        return _google_login_error("Google sign-in is not configured. Ask the server administrator.", 503)
+
+    state = secrets.token_urlsafe(32)
+    nonce = secrets.token_urlsafe(32)
+    verifier = secrets.token_urlsafe(64)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
+    session["google_oauth"] = {"state": state, "nonce": nonce, "verifier": verifier}
+    params = {
+        "client_id": _google_oauth_value("CLIENT_ID"),
+        "redirect_uri": url_for("google_callback", _external=True),
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": state,
+        "nonce": nonce,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+        "prompt": "select_account",
+    }
+    from urllib.parse import urlencode
+    return redirect("https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params))
+
+
+@app.route("/auth/google/callback")
+def google_callback():
+    oauth_session = session.pop("google_oauth", None)
+    if not _google_oauth_configured():
+        return _google_login_error("Google sign-in is not configured. Ask the server administrator.", 503)
+    if not isinstance(oauth_session, dict) or not secrets.compare_digest(
+        str(request.args.get("state", "")), str(oauth_session.get("state", ""))
+    ):
+        return _google_login_error("Google sign-in could not be verified. Please try again.")
+    if request.args.get("error") or not request.args.get("code"):
+        return _google_login_error("Google sign-in was cancelled or could not be completed.")
+
+    redirect_uri = url_for("google_callback", _external=True)
+    try:
+        token_response = requests.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "code": request.args["code"],
+                "client_id": _google_oauth_value("CLIENT_ID"),
+                "client_secret": _google_oauth_value("CLIENT_SECRET"),
+                "redirect_uri": redirect_uri,
+                "grant_type": "authorization_code",
+                "code_verifier": oauth_session["verifier"],
+            },
+            timeout=10,
+        )
+        token_response.raise_for_status()
+        id_token_value = token_response.json().get("id_token")
+        if not id_token_value:
+            raise ValueError("Google did not return an identity token.")
+        from google.auth.transport.requests import Request as GoogleRequest
+        from google.oauth2 import id_token
+        claims = id_token.verify_oauth2_token(
+            id_token_value, GoogleRequest(), _google_oauth_value("CLIENT_ID")
+        )
+    except ImportError as error:
+        app.logger.error("google_sign_in_dependency_missing error_type=%s", type(error).__name__)
+        return _google_login_error(
+            "Google sign-in verification is unavailable. Install the app requirements and restart the server.",
+            503,
+        )
+    except (requests.RequestException, ValueError, KeyError, TypeError) as error:
+        app.logger.warning("google_sign_in_failed error_type=%s", type(error).__name__)
+        return _google_login_error("Google sign-in could not be completed. Please try again.")
+    except Exception as error:
+        # Token verification can raise provider-specific validation errors.
+        app.logger.warning("google_sign_in_failed error_type=%s", type(error).__name__)
+        return _google_login_error("Google sign-in could not be verified. Please try again.")
+
+    if claims.get("nonce") != oauth_session.get("nonce"):
+        return _google_login_error("Google sign-in could not be verified. Please try again.")
+    email = claims.get("email")
+    if not claims.get("email_verified") or not isinstance(email, str):
+        return _google_login_error("Use a Google account with a verified email address.")
+    try:
+        user = account_store.get_user_by_email(email)
+        if user is None:
+            user = account_store.create_user(email, secrets.token_urlsafe(48))
+            if user is None:
+                # Another callback may have created this address at the same time.
+                user = account_store.get_user_by_email(email)
+            elif account_store.verify_email(user["id"]):
+                user = account_store.get_user(user["id"])
+        if user is None or not user["email_verified"]:
+            return _google_login_error("This email is awaiting verification. Sign in after verifying it.")
+        if user["deleted_at"] is not None:
+            if not account_store.cancel_user_deletion(user["id"]):
+                return _google_login_error("This account is past its recovery period and is being deleted.")
+            user = account_store.get_user(user["id"])
+            session.pop("account_deletion_id", None)
+    except ValueError:
+        return _google_login_error("Google returned an invalid email address.")
+
+    login_user(Account(user), fresh=True)
+    session["account_auth_version"] = user["auth_version"]
+    session.permanent = True
+    return redirect(url_for("home"))
 
 
 @app.route("/auth/register", methods=["POST"])
@@ -386,6 +562,11 @@ def login():
         return _auth_template(auth_error="Email or password is incorrect."), 401
     if user is None or not user["email_verified"]:
         return _auth_template(auth_error="Email or password is incorrect."), 401
+    if user["deleted_at"] is not None:
+        if not account_store.cancel_user_deletion(user["id"]):
+            return _auth_template(auth_error="Email or password is incorrect."), 401
+        user = account_store.get_user(user["id"])
+        session.pop("account_deletion_id", None)
     login_user(Account(user), fresh=True)
     session["account_auth_version"] = user["auth_version"]
     session.permanent = True
@@ -437,12 +618,12 @@ def resend_verification():
 def request_password_reset():
     try:
         user = account_store.get_user_by_email(request.form.get("email", ""))
-        if user and user["email_verified"]:
+        if user and user["email_verified"] and user["deleted_at"] is None:
             _send_token_email(user, "reset")
     except ValueError:
         pass
     return _auth_template(
-        auth_notice="If a verified account matches that address, a reset link will be sent if email delivery is configured. Contact the server administrator if it does not arrive."
+        auth_notice="Email sent"
     ), 202
 
 
@@ -496,6 +677,33 @@ def change_password():
     session["account_auth_version"] = updated["auth_version"]
     session.permanent = True
     return jsonify({"changed": True, "csrf_token": generate_csrf()})
+
+
+@app.route("/api/account", methods=["DELETE"])
+def delete_account():
+    data = _request_data()
+    typed_email = data.get("email") if data else None
+    if not isinstance(typed_email, str):
+        return jsonify({"error": "Enter your account email to confirm deletion."}), 400
+    user_id = session.get("account_deletion_id") or session.get("_user_id")
+    pending = account_store.get_scheduled_deletion(user_id) if isinstance(user_id, str) else None
+    if pending:
+        account_email = pending["email"]
+    elif current_user.is_authenticated:
+        user = _logged_in_user()
+        if user is None:
+            return jsonify({"error": "Sign in again before deleting your account."}), 401
+        user_id, account_email = user["id"], user["email"]
+    else:
+        return jsonify({"error": "Sign in again before deleting your account."}), 401
+    confirmation = typed_email.strip().casefold().encode("utf-8")
+    if not secrets.compare_digest(confirmation, account_email.encode("utf-8")):
+        return jsonify({"error": "The email did not match your account."}), 400
+    deletion = pending or account_store.schedule_user_deletion(user_id, request.remote_addr)
+    if deletion is None:
+        return jsonify({"error": "The account could not be scheduled for deletion."}), 500
+    session["account_deletion_id"] = user_id
+    return jsonify({"scheduled": True, "purge_after": deletion["purge_after"]}), 202
 
 
 @app.route("/api/account/memories")
