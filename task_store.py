@@ -1,31 +1,21 @@
-import os
 import json
 import re
-import sqlite3
 import uuid
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from difflib import SequenceMatcher
-from pathlib import Path
+
+import database as database_layer
 
 
-DEFAULT_DATABASE_PATH = Path(__file__).resolve().with_name("tasks.sqlite3")
 TASK_FIELDS = {"title", "description", "project", "due_date", "priority", "status", "parent_task_id"}
 EDITABLE_TASK_FIELDS = {"title", "description", "project", "due_date", "priority"}
 PRIORITIES = {"low", "medium", "high"}
 STATUSES = {"open", "completed"}
 
 
-def _database_path():
-    return Path(os.environ.get("ENNOIC_TASK_DB", DEFAULT_DATABASE_PATH))
-
-
 def _connect():
-    path = _database_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(path)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON")
+    connection = database_layer.connect()
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS tasks (
@@ -236,7 +226,7 @@ def create_tasks(tasks, parent_task_id=None, *, user_id=None):
                 created.append(
                     _task_from_row(connection.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone())
                 )
-    except sqlite3.IntegrityError as exc:
+    except database_layer.INTEGRITY_ERRORS as exc:
         raise ValueError("The parent task could not be found.") from exc
     return created
 

@@ -99,6 +99,9 @@ class AccountAuthenticationTests(AccountTestCase):
             "SMTP_HOST": "",
             "SMTP_FROM_EMAIL": "",
             "SMTP_FROM": "",
+            "RESEND_API_KEY": "",
+            "RESEND_FROM_EMAIL": "",
+            "ENNOIC_EMAIL_FROM": "",
         }
         with patch.dict(os.environ, smtp_variables):
             response = client.post(
@@ -124,6 +127,40 @@ class AccountAuthenticationTests(AccountTestCase):
             },
         ):
             self.assertTrue(app._email_delivery_configured())
+
+    def test_resend_sends_html_and_inline_email_images_through_https_api(self):
+        class FakeResponse:
+            ok = True
+            status_code = 200
+
+        with patch.dict(
+            os.environ,
+            {
+                "RESEND_API_KEY": "private-test-key",
+                "RESEND_FROM_EMAIL": "Ennoic <hello@example.com>",
+            },
+        ), patch("app.requests.post", return_value=FakeResponse()) as send:
+            self.assertTrue(
+                app._send_account_email(
+                    "recipient@example.com",
+                    "Reset password",
+                    "Open the reset link.",
+                    html_body='<img src="cid:ennoic-logo">',
+                    inline_images=((
+                        "ennoic-logo",
+                        os.path.join(app.app.static_folder, "email", "ennoic-logo.png"),
+                        "png",
+                    ),),
+                )
+            )
+
+        send.assert_called_once()
+        request = send.call_args
+        self.assertEqual(request.args[0], "https://api.resend.com/emails")
+        self.assertEqual(request.kwargs["headers"]["Authorization"], "Bearer private-test-key")
+        self.assertEqual(request.kwargs["json"]["to"], ["recipient@example.com"])
+        self.assertEqual(request.kwargs["json"]["html"], '<img src="cid:ennoic-logo">')
+        self.assertEqual(request.kwargs["json"]["attachments"][0]["content_id"], "ennoic-logo")
 
     def test_smtp_authentication_failure_logs_stage_without_secrets(self):
         class FakeSMTP:

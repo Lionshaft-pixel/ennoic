@@ -10,3 +10,4 @@ __pycache__/
 instance/
 *.sqlite3.legacy-backup-*
 admin_users.html
+.neon

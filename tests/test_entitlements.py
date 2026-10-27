@@ -197,11 +197,12 @@ class EntitlementTests(unittest.TestCase):
         user = self.create_user()
         client = self.logged_in_client(user)
         response = client.post("/api/checkout", json={"plan": "pro", "paid": True})
-        self.assertEqual(response.status_code, 501)
+        self.assertEqual(response.status_code, 400)
         self.assertEqual(client.get("/api/entitlements?plan=pro").get_json()["plan"], "free")
         with self.assertRaises(billing.PaymentProviderUnavailable):
             billing.subscription_service.create_checkout_session(
-                user_id=user["id"], plan="pro", return_url="https://ennoic.example.invalid/pricing"
+                user_id=user["id"], plan="pro", return_url="https://ennoic.example.invalid/pricing",
+                contact={"full_name": "Test User", "email": "test@example.com", "phone": "1234567890"},
             )
 
     def test_unverified_provider_event_cannot_grant_pro(self):

@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: ennoic
+    runtime: python
+    plan: free
+    branch: vibecoded
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    healthCheckPath: /
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: ENNOIC_SECRET_KEY
+        generateValue: true
+      - key: ENNOIC_COOKIE_SECURE
+        value: "true"
+      - key: ENNOIC_TRUST_PROXY
+        value: "true"

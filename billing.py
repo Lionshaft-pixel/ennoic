@@ -222,6 +222,8 @@ class SubscriptionService:
         event = provider.verify_event(payload, signature)
         if event is None:
             return False
+        if not isinstance(event, VerifiedSubscriptionEvent):
+            raise ValueError("The payment provider returned an unverified subscription event.")
         return account_store.apply_verified_subscription_event(
             provider=provider.name,
             event_id=event.event_id,

@@ -18,6 +18,7 @@ from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFError, CSRFProtect, generate_csrf
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
 from dotenv import load_dotenv
 
 import account_store
@@ -30,6 +31,10 @@ from task_management import message_requires_ai, resolve_task_confirmation
 
 app = Flask(__name__, instance_relative_config=True)
 load_dotenv(Path(__file__).resolve().with_name(".env"), override=False)
+
+if os.environ.get("ENNOIC_TRUST_PROXY", "").casefold() in {"1", "true", "yes"}:
+    # Render terminates TLS and forwards one trusted proxy hop to the app.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 
 def _environment_value(*names, default=None):
@@ -115,7 +120,7 @@ def unauthorized():
 
 @app.before_request
 def initialize_database():
-    path = str(account_store.database_path().resolve())
+    path = account_store.database_key()
     with _database_initialization_lock:
         if path not in _initialized_databases:
             account_store.initialize()
@@ -237,10 +242,52 @@ def _consume_email_token(token, purpose, *, max_age):
 
 
 def _send_account_email(recipient, subject, body, html_body=None, inline_images=()):
+    resend_api_key = _environment_value("RESEND_API_KEY")
+    resend_sender = _environment_value("RESEND_FROM_EMAIL", "ENNOIC_EMAIL_FROM")
+    if resend_api_key and resend_sender:
+        payload = {
+            "from": resend_sender,
+            "to": [recipient],
+            "subject": subject,
+            "text": body,
+        }
+        if html_body:
+            payload["html"] = html_body
+        if inline_images:
+            payload["attachments"] = [
+                {
+                    "filename": Path(image_path).name,
+                    "content": base64.b64encode(Path(image_path).read_bytes()).decode("ascii"),
+                    "content_type": f"image/{subtype}",
+                    "content_id": content_id,
+                }
+                for content_id, image_path, subtype in inline_images
+            ]
+        try:
+            response = requests.post(
+                "https://api.resend.com/emails",
+                headers={"Authorization": f"Bearer {resend_api_key}"},
+                json=payload,
+                timeout=15,
+            )
+        except requests.RequestException as error:
+            app.logger.error(
+                "account_email_delivery_failed provider=resend stage=request error_type=%s",
+                type(error).__name__,
+            )
+            raise OSError("Email API request failed.") from error
+        if not response.ok:
+            app.logger.error(
+                "account_email_delivery_failed provider=resend stage=send status_code=%s",
+                response.status_code,
+            )
+            raise OSError("Email API rejected the message.")
+        return True
+
     host = _environment_value("ENNOIC_SMTP_HOST", "SMTP_HOST")
     sender = _environment_value("ENNOIC_SMTP_FROM", "SMTP_FROM_EMAIL", "SMTP_FROM")
     if not host or not sender:
-        app.logger.warning("Account email is not configured; set ENNOIC_SMTP_HOST and ENNOIC_SMTP_FROM.")
+        app.logger.warning("Account email is not configured; set Resend or SMTP credentials.")
         return False
 
     message = EmailMessage()
@@ -313,10 +360,15 @@ def _send_account_email(recipient, subject, body, html_body=None, inline_images=
 
 
 def _email_delivery_configured():
-    return bool(
+    resend_configured = bool(
+        _environment_value("RESEND_API_KEY")
+        and _environment_value("RESEND_FROM_EMAIL", "ENNOIC_EMAIL_FROM")
+    )
+    smtp_configured = bool(
         _environment_value("ENNOIC_SMTP_HOST", "SMTP_HOST")
         and _environment_value("ENNOIC_SMTP_FROM", "SMTP_FROM_EMAIL", "SMTP_FROM")
     )
+    return resend_configured or smtp_configured
 
 
 def _google_oauth_value(name):

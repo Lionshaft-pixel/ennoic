@@ -2,13 +2,13 @@ import hashlib
 import hmac
 import json
 import os
-import sqlite3
 import uuid
-from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from werkzeug.security import check_password_hash, generate_password_hash
+
+import database as database_layer
 
 
 DEFAULT_DATABASE_PATH = Path(__file__).resolve().with_name("tasks.sqlite3")
@@ -23,6 +23,10 @@ class MemoryCapacityReached(Exception):
 
 def database_path():
     return Path(os.environ.get("ENNOIC_TASK_DB", DEFAULT_DATABASE_PATH))
+
+
+def database_key():
+    return database_layer.database_key()
 
 
 def _now():
@@ -44,22 +48,8 @@ def _timestamp_after(value, reference):
     return parsed_value > parsed_reference
 
 
-@contextmanager
 def connection():
-    path = database_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path, timeout=10)
-    db.row_factory = sqlite3.Row
-    db.execute("PRAGMA foreign_keys = ON")
-    db.execute("PRAGMA busy_timeout = 10000")
-    try:
-        yield db
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        db.close()
+    return database_layer.connection()
 
 
 def initialize():
@@ -240,7 +230,7 @@ def initialize():
         )
         db.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS memories_user_person_object "
-            "ON memories(user_id, person COLLATE NOCASE, object COLLATE NOCASE)"
+            "ON memories(user_id, lower(person), lower(object))"
         )
         for table in ("tasks", "task_proposals"):
             columns = {
@@ -323,7 +313,7 @@ def create_user(email, password):
                 "INSERT INTO account_subscriptions (user_id, plan, status, updated_at) VALUES (?, 'free', 'free', ?)",
                 (user_id, _now()),
             )
-    except sqlite3.IntegrityError:
+    except database_layer.INTEGRITY_ERRORS:
         return None
     return get_user(user_id)
 
@@ -638,7 +628,7 @@ def list_conversations(user_id, *, limit=None):
 
 def count_conversations(user_id):
     with connection() as db:
-        return db.execute("SELECT COUNT(*) FROM conversations WHERE user_id = ?", (user_id,)).fetchone()[0]
+        return db.execute("SELECT COUNT(*) AS count FROM conversations WHERE user_id = ?", (user_id,)).fetchone()["count"]
 
 
 def conversation_is_in_window(user_id, conversation_id, limit):
@@ -766,14 +756,14 @@ def list_memories(user_id):
 
 def count_memories(user_id):
     with connection() as db:
-        return db.execute("SELECT COUNT(*) FROM memories WHERE user_id = ?", (user_id,)).fetchone()[0]
+        return db.execute("SELECT COUNT(*) AS count FROM memories WHERE user_id = ?", (user_id,)).fetchone()["count"]
 
 
 def remember(user_id, person, object_name, time_value, *, max_memories=None):
     with connection() as db:
         existing = db.execute(
-            "SELECT id FROM memories WHERE user_id = ? AND person = ? COLLATE NOCASE "
-            "AND object = ? COLLATE NOCASE",
+            "SELECT id FROM memories WHERE user_id = ? AND lower(person) = lower(?) "
+            "AND lower(object) = lower(?)",
             (user_id, person, object_name),
         ).fetchone()
         if existing:
@@ -783,7 +773,7 @@ def remember(user_id, person, object_name, time_value, *, max_memories=None):
             )
             return "Updated existing memory"
         if max_memories is not None:
-            used = db.execute("SELECT COUNT(*) FROM memories WHERE user_id = ?", (user_id,)).fetchone()[0]
+            used = db.execute("SELECT COUNT(*) AS count FROM memories WHERE user_id = ?", (user_id,)).fetchone()["count"]
             if used >= max_memories:
                 raise MemoryCapacityReached(used, max_memories)
         db.execute(
@@ -949,8 +939,8 @@ def apply_verified_subscription_event(*, provider, event_id, user_id, event_type
 def forget_memory(user_id, person, object_name):
     with connection() as db:
         cursor = db.execute(
-            "DELETE FROM memories WHERE user_id = ? AND person = ? COLLATE NOCASE "
-            "AND object = ? COLLATE NOCASE",
+            "DELETE FROM memories WHERE user_id = ? AND lower(person) = lower(?) "
+            "AND lower(object) = lower(?)",
             (user_id, person, object_name),
         )
     return cursor.rowcount
@@ -958,8 +948,8 @@ def forget_memory(user_id, person, object_name):
 
 def legacy_data_counts():
     with connection() as db:
-        task_count = db.execute("SELECT COUNT(*) FROM tasks WHERE user_id IS NULL").fetchone()[0]
-        memory_count = db.execute("SELECT COUNT(*) FROM memories WHERE user_id IS NULL").fetchone()[0]
+        task_count = db.execute("SELECT COUNT(*) AS count FROM tasks WHERE user_id IS NULL").fetchone()["count"]
+        memory_count = db.execute("SELECT COUNT(*) AS count FROM memories WHERE user_id IS NULL").fetchone()["count"]
     return {"tasks": task_count, "memories": memory_count}
 
 
@@ -980,15 +970,15 @@ def import_legacy_data(user_id, legacy_memories=()):
         prepared_memories.append((person.strip(), object_name.strip(), time_value.strip()))
 
     with connection() as db:
-        task_count = db.execute("SELECT COUNT(*) FROM tasks WHERE user_id IS NULL").fetchone()[0]
-        memory_count = db.execute("SELECT COUNT(*) FROM memories WHERE user_id IS NULL").fetchone()[0]
+        task_count = db.execute("SELECT COUNT(*) AS count FROM tasks WHERE user_id IS NULL").fetchone()["count"]
+        memory_count = db.execute("SELECT COUNT(*) AS count FROM memories WHERE user_id IS NULL").fetchone()["count"]
         db.execute("UPDATE tasks SET user_id = ? WHERE user_id IS NULL", (user_id,))
         db.execute("UPDATE task_proposals SET user_id = ? WHERE user_id IS NULL", (user_id,))
         db.execute("UPDATE memories SET user_id = ? WHERE user_id IS NULL", (user_id,))
         for person, object_name, time_value in prepared_memories:
             existing = db.execute(
-                "SELECT id FROM memories WHERE user_id = ? AND person = ? COLLATE NOCASE "
-                "AND object = ? COLLATE NOCASE",
+                "SELECT id FROM memories WHERE user_id = ? AND lower(person) = lower(?) "
+                "AND lower(object) = lower(?)",
                 (user_id, person, object_name),
             ).fetchone()
             if existing:
