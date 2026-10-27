@@ -1,5 +1,10 @@
 import requests
 import os
+import logging
+import time
+
+
+logger = logging.getLogger(__name__)
 
 ASSISTANT_SYSTEM_PROMPT = """You are Ennoic Mind, a helpful assistant. Keep normal conversation natural.
 
@@ -72,16 +77,27 @@ def ask_cloud_model(
     if max_completion_tokens is not None:
         payload["max_completion_tokens"] = max_completion_tokens
 
-    response = requests.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        },
-        json=payload,
-        timeout=90,
-    )
-    response.raise_for_status()
+    started_at = time.perf_counter()
+    status_code = "no_response"
+    try:
+        response = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=90,
+        )
+        status_code = response.status_code
+        response.raise_for_status()
+    finally:
+        logger.info(
+            "groq_request_complete model=%s elapsed_ms=%d status=%s",
+            payload["model"],
+            round((time.perf_counter() - started_at) * 1000),
+            status_code,
+        )
 
     try:
         choice = response.json()["choices"][0]
