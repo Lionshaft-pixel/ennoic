@@ -153,25 +153,11 @@ if (card && authContext.resetToken) {
     }
   }
 
-  function ensureVerificationLink() {
-    const forgotLink = [...card.querySelectorAll("a")].find((link) => link.textContent.trim() === "Forgot password?");
-    if (forgotLink && !forgotLink.parentElement.querySelector("[data-auth-resend-link]")) {
-      const verificationLink = document.createElement("a");
-      verificationLink.href = "#";
-      verificationLink.textContent = "Resend verification";
-      verificationLink.setAttribute("data-auth-resend-link", "");
-      verificationLink.style.cssText = forgotLink.getAttribute("style") || "font-size:13px;font-weight:600;color:#ffd9a8";
-      forgotLink.parentElement.append(verificationLink);
-    }
-  }
-
   const linkObserver = new MutationObserver(() => {
     ensureAuthMessages();
-    ensureVerificationLink();
   });
   linkObserver.observe(card, { childList: true, subtree: true });
   ensureAuthMessages();
-  ensureVerificationLink();
 
   document.addEventListener("click", (event) => {
     const link = event.target instanceof Element ? event.target.closest("a") : null;
@@ -184,14 +170,6 @@ if (card && authContext.resetToken) {
         title: "Reset your password",
         action: "/auth/password-reset",
         submitLabel: "Send reset link",
-      });
-    } else if (link.hasAttribute("data-auth-resend-link")) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      openEmailModal({
-        title: "Resend verification email",
-        action: "/auth/resend-verification",
-        submitLabel: "Resend verification",
       });
     }
   }, true);
@@ -209,25 +187,16 @@ if (card && authContext.resetToken) {
 
     const email = visibleForm.querySelector("#email");
     const password = visibleForm.querySelector("#password");
-    const selectedTab = [...card.querySelectorAll("button[aria-pressed='true']")][0];
-    const isSignup = selectedTab && selectedTab.textContent.trim().toLowerCase() === "sign up";
     if (!email || !password || !email.value || !email.reportValidity()) return;
-    if (!password.value || password.value.length > 128 || (isSignup && password.value.length < 12)) {
-      password.setCustomValidity(isSignup
-        ? "Use a password between 12 and 128 characters."
-        : "Enter your password using no more than 128 characters.");
+    if (!password.value || password.value.length > 128) {
+      password.setCustomValidity("Enter a password using no more than 128 characters.");
       password.reportValidity();
       password.addEventListener("input", () => password.setCustomValidity(""), { once: true });
       return;
     }
-    postForm(isSignup ? "/auth/register" : "/auth/login", {
+    postForm("/auth/continue", {
       email: email.value,
       password: password.value,
     });
   }, true);
-
-  if (authContext.activeForm === "register") {
-    const signupTab = [...card.querySelectorAll("button")].find((button) => button.textContent.trim() === "Sign up");
-    if (signupTab) signupTab.click();
-  }
 }

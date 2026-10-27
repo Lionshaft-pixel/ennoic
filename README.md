@@ -137,7 +137,7 @@ PUBLIC_URL=http://127.0.0.1:5000
 
 Port 587 uses verified STARTTLS by default; use port 465 with `SMTP_USE_SSL=true` for SMTP-over-TLS. `PUBLIC_URL` must be the address users can reach to open verification and reset links. Keep SMTP credentials in `.env` for local development or a secrets manager for deployment. Set `ENNOIC_COOKIE_SECURE=true` when serving over HTTPS. For deployments with multiple workers or instances, install the Redis client (`python -m pip install redis`) and configure `ENNOIC_RATE_LIMIT_STORAGE` to a shared Redis-compatible store; the default in-memory limiter is only suitable for local development and tests.
 
-For Gmail, enable 2-Step Verification and create a Google **App Password** for SMTP; use that app password as `SMTP_PASSWORD`, not your normal Google password. Use your full Gmail address as `SMTP_USERNAME` and typically as `SMTP_FROM_EMAIL`. After changing `.env`, restart Ennoic and use **Resend verification** on the sign-in page if an account's verification email needs to be sent again.
+For Gmail, enable 2-Step Verification and create a Google **App Password** for SMTP; use that app password as `SMTP_PASSWORD`, not your normal Google password. Use your full Gmail address as `SMTP_USERNAME` and typically as `SMTP_FROM_EMAIL`. After changing `.env`, restart Ennoic. New email/password accounts receive a verification link during sign-up.
 
 Google sign-in requires a Google OAuth client with the **Web application** type. Configure the OAuth consent screen in Google Cloud Console and add the redirect URI `http://127.0.0.1:5000/auth/google/callback` (use the matching host and scheme for your deployment). Add these values to `.env`:
 
@@ -149,6 +149,20 @@ GOOGLE_CLIENT_SECRET=your-google-oauth-client-secret
 The client secret is private: keep it out of source control. Install dependencies with `python -m pip install -r requirements.txt` and restart Ennoic. Google sign-in accepts verified Google email addresses and automatically creates a verified Ennoic account when one does not already exist. If an Ennoic account already uses that verified address, Google sign-in opens the existing account.
 
 Email delivery diagnostics are written to the terminal running Ennoic. On failure, look for `account_email_delivery_failed`; its `stage` identifies configuration, connection, TLS, authentication, or message submission. Logs intentionally omit the recipient address, password, and verification URL. A successful SMTP send means the provider accepted the message, not necessarily that it reached the inbox; check spam and provider delivery status too.
+
+### Plans and entitlements
+
+Every account starts on Free. The server enforces monthly AI request limits, memory capacity, and the number of conversations visible in history. Free defaults are 40 AI requests per UTC calendar month, 40 saved memories, and up to 10 conversations in history. Pro defaults are 1,000 AI requests, 1,000 memories, and full searchable history. Basic task management remains available on both plans. Usage is tracked in SQLite; repeated chat submissions with the same request ID reuse the saved result instead of consuming another request. Failed processing releases the reservation so the user can retry.
+
+Limits and prices are centralized in `entitlements.py` and can be overridden in `.env` with the `ENNOIC_FREE_*`, `ENNOIC_PRO_*`, and `ENNOIC_PRO_PRICE_*` settings shown in `.env.example`. Change the India price with `ENNOIC_PRO_PRICE_INR_MINOR` (paise; `17900` means ₹179) and the USD price with `ENNOIC_PRO_PRICE_USD_MINOR` (cents; `499` means $4.99). The pricing page and checkout use the same server-selected currency: India receives INR, other regions USD. The app uses `Accept-Language` as a region hint; for IP-based country selection, set `ENNOIC_COUNTRY_HEADER` only when the app is behind a proxy that overwrites that header. Conversation history outside the Free window stays stored and becomes visible again if Pro is granted. Memory limits block new memories while preserving existing records. Attachments, file analysis, and advanced planning do not exist in the app yet; their entitlement settings are prepared, but they are not offered as available features.
+
+Razorpay subscriptions are integrated in test mode when the Razorpay credentials and plan IDs are configured. Set `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and the matching `RAZORPAY_PRO_PLAN_ID_INR` or `RAZORPAY_PRO_PLAN_ID_USD` in the deployment's secret settings. The Razorpay plan amount and currency must match the app's `ENNOIC_PRO_PRICE_*_MINOR` settings. In Razorpay's Webhooks page, set the webhook URL to `https://YOUR-DOMAIN/api/razorpay/webhook`, subscribe to `subscription.activated`, `subscription.resumed`, `subscription.charged`, `subscription.cancelled`, `subscription.completed`, `subscription.halted`, and `subscription.paused`, then copy Razorpay's webhook secret into `RAZORPAY_WEBHOOK_SECRET`. Keep the webhook secret separate from the API key secret. A successful checkout signature is verified in the browser callback, but Pro access is granted only after a valid Razorpay webhook confirms the subscription lifecycle event. Verify the webhook delivery and subscription state before enabling live payments.
+
+The checkout page can save a user's name, contact email, and phone number to that account. No request or client-side value can activate Pro. Before launch, configure production credentials and prices, verify webhook delivery and idempotency, and complete legal/tax and refund setup.
+
+### User administration
+
+Set `ENNOIC_ADMIN_EMAILS` in `.env` to a comma-separated allowlist of account sign-in emails. Those accounts can view `/admin/users`, which lists the account email and ID, verification and plan status, saved checkout contact details, and last sign-in time and IP. The IP is the address Flask sees; configure trusted proxy handling before relying on it. The app stores only the last sign-in IP, not an IP history. Checkout contact data is account-linked and is removed when the account's scheduled deletion is purged. Admin access is server-side and an unlisted account receives a 404.
 
 ### Importing existing local data
 
@@ -192,7 +206,13 @@ python -m unittest discover -s tests -v
 Ennoic is an early prototype, so there are still limitations.
 
 - Ennoic has account authentication, scheduled account deletion, and ownership checks, but it is still a prototype and is not production-ready. Public deployment needs HTTPS, managed secret storage, reliable SMTP, backup retention and deletion procedures, a shared rate-limit store, and a correctly configured production WSGI server and trusted proxy. Audit IP addresses reflect the address Flask sees; configure trusted proxy handling before relying on them as client IPs.
-- SQLite is local to the app instance and is not automatically backed up. Email changes, payments, and subscriptions are not implemented.
+- SQLite is local to the app instance and is not automatically backed up. Razorpay subscriptions are integrated, but webhook delivery and live payments still need deployment-specific setup and verification.
 - Rate limits are IP-based. Configure the deployment's trusted proxy chain carefully so the app sees the correct client address; do not trust arbitrary forwarded headers.
 - Natural-language task extraction depends on the configured model; review extracted tasks and deadlines.
 - Prompts and conversation context are sent to Groq. Avoid sending sensitive content unless that use is acceptable to you.
+
+### Hosting on Render
+
+Render's Flask guide uses `pip install -r requirements.txt` as the build command and `gunicorn app:app` as the start command. Connect the `vibecoded` GitHub branch to a new **Web Service** to deploy it; pushes to that branch trigger deployments. Add the required `.env` values under the service's environment settings, and set `PUBLIC_URL` and Google's OAuth redirect URI to the deployed HTTPS address.
+
+Render's free web service is suitable for a demo, but not for real user accounts with the current SQLite storage: it sleeps after 15 minutes without traffic, can take about a minute to wake, and its filesystem—including SQLite data—is lost on spin-down, restart, or redeploy. Render Free Postgres can be an option while migrating away from SQLite, but the free database expires after 30 days. Render also blocks outbound SMTP ports 25, 465, and 587, so Ennoic's current SMTP email delivery will not work from a free Render service; use an email provider with an HTTPS API or another host that permits your mail setup. Treat the free deployment as a preview until persistent database storage and email delivery are in place.

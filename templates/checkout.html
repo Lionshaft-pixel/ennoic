@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <meta name="color-scheme" content="dark">
+  <title>Ennoic Pro checkout</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root{--bg:#0b0504;--card:#150b09;--line:rgba(255,255,255,.12);--text:#f6efe9;--muted:#d6c5b8;--orange:#ff8a2b;--yellow:#f7e436}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% 0%,rgba(217,89,26,.45),rgba(11,5,4,0) 55%),var(--bg);color:var(--text);font:15px/1.55 Inter,system-ui,sans-serif;padding:28px 24px 60px}
+    a{color:inherit}.brand{font-weight:700;letter-spacing:-.01em;text-decoration:none}.wrap{max-width:1120px;margin:0 auto}header{display:flex;justify-content:space-between;align-items:center}.secure{font-size:13px;color:#e4d3c6;background:rgba(255,255,255,.08);padding:8px 14px;border-radius:999px}
+    h1{margin:48px 0 0;font-family:'Instrument Serif',Georgia,serif;font-style:italic;font-weight:400;font-size:clamp(40px,5.5vw,64px);line-height:1;letter-spacing:-.02em}.grid{margin-top:36px;display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}.main{flex:1 1 560px;display:flex;flex-direction:column;gap:20px}.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:26px}.card h2{margin:0 0 18px;font-size:17px;font-weight:600}.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px}
+    label{display:block;font-size:12px;color:#cbb9ac;margin-bottom:6px}input{width:100%;background:#0f0807;border:1px solid rgba(255,255,255,.18);border-radius:10px;padding:13px 14px;color:var(--text);font:15px Inter,sans-serif}input:focus{outline:2px solid var(--orange);border-color:transparent}
+    .save-contact{display:flex;align-items:flex-start;gap:10px;margin-top:18px;color:var(--muted);font-size:13px;line-height:1.5;cursor:pointer}.save-contact input{flex:0 0 18px;width:18px;height:18px;margin:1px 0 0;accent-color:var(--orange)}
+    aside{flex:1 1 340px;border-color:rgba(255,138,43,.4)}.row{display:flex;justify-content:space-between;gap:16px}.row strong{white-space:nowrap}.summary-total{margin-top:22px;padding-top:18px;border-top:1px solid var(--line);font-size:18px;font-weight:600;color:#fff}.subtle{margin-top:4px;font-size:13px;color:#cbb9ac}.payment-copy{margin:0;font-size:14px;line-height:1.65;color:var(--muted)}
+    #continue-btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;border:0;cursor:pointer;background:var(--yellow);color:#1a1200;font:600 16px Inter,sans-serif;padding:17px;border-radius:12px;box-shadow:0 8px 40px rgba(247,228,54,.25)}#continue-btn:disabled{opacity:.65;cursor:not-allowed}.spin{display:none;width:18px;height:18px;border:2.5px solid rgba(26,18,0,.3);border-top-color:#1a1200;border-radius:50%;animation:s .8s linear infinite}#continue-btn.loading .spin{display:inline-block}@keyframes s{to{transform:rotate(360deg)}}
+    #status{display:none;border-radius:12px;padding:14px 16px;font-size:14px;line-height:1.5}#status.error{display:block;background:#3a1210;border:1px solid #c0432d;color:#ffd6cc}#status.info{display:block;background:#241410;border:1px solid rgba(255,138,43,.5);color:#ffe2c4}.note{margin:0;font-size:12px;line-height:1.6;color:#b9a89b;text-align:center}.back{display:inline-block;margin-top:24px;color:#e7cfc0;font-size:13px;text-decoration:none}.back:hover{text-decoration:underline}
+    @media(max-width:600px){body{padding:18px 14px 40px}.grid{margin-top:24px}.card{padding:20px}h1{margin-top:38px}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <a href="/" class="brand">Ennoic</a>
+      <span class="secure">Checkout details</span>
+    </header>
+    <h1>One step from a clear list.</h1>
+    <div class="grid">
+      <div class="main">
+        <form id="contact-form">
+          <section class="card">
+            <h2>Contact details</h2>
+            <div class="fields">
+              <div><label for="name">Full name</label><input id="name" name="name" autocomplete="name" maxlength="120" value="{{ contact.full_name if contact else '' }}" required></div>
+              <div><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" maxlength="254" value="{{ contact.email if contact else user.email }}" required></div>
+              <div><label for="contact">Mobile number</label><input id="contact" name="contact" type="tel" autocomplete="tel" maxlength="32" value="{{ contact.phone if contact else '' }}" required></div>
+            </div>
+            <label class="save-contact" for="save-contact">
+              <input id="save-contact" name="save_contact" type="checkbox">
+              <span>Save these contact details to my account for future checkouts.</span>
+            </label>
+          </section>
+          <section class="card" style="margin-top:20px">
+            <h2>Payment</h2>
+            <p class="payment-copy">Your payment will be processed securely by Razorpay. Ennoic never receives or stores your card details.</p>
+          </section>
+          <div id="status" role="status" aria-live="polite"></div>
+          <button id="continue-btn" type="submit"><span class="spin" aria-hidden="true"></span><span id="continue-label">Continue to payment</span></button>
+          <p class="note">Your contact details are saved to your Ennoic account only if you select the checkbox above.</p>
+        </form>
+      </div>
+      <aside class="card">
+        <div style="font-size:12px;letter-spacing:.08em;color:#ff9a3d">ORDER SUMMARY</div>
+        <div class="row" style="margin-top:16px"><div><div style="font-size:19px;font-weight:600"><span style="font-family:'Instrument Serif',Georgia,serif;font-style:italic">Ennoic</span> Pro</div><div class="subtle">Billed monthly. Cancel any time.</div></div><strong>{{ selected_price.display }}</strong></div>
+        <div class="row summary-total"><span>Total per month</span><span>{{ selected_price.display }}</span></div>
+      </aside>
+    </div>
+    <a class="back" href="/pricing">Back to pricing</a>
+  </main>
+  <script src="https://checkout.razorpay.com/v1/checkout.js" nonce="{{ csp_nonce }}"></script>
+  <script nonce="{{ csp_nonce }}">
+    (function () {
+      const form = document.getElementById("contact-form");
+      const button = document.getElementById("continue-btn");
+      const label = document.getElementById("continue-label");
+      const status = document.getElementById("status");
+      const idleLabel = label.textContent;
+      function showStatus(kind, message) {
+        status.className = kind || "";
+        status.textContent = message || "";
+      }
+      const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+      async function postJson(url, body) {
+        const response = await fetch(url, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken },
+          body: JSON.stringify(body),
+        });
+        let result;
+        try { result = await response.json(); }
+        catch { throw new Error("The server returned an unreadable response."); }
+        if (!response.ok) throw new Error(result.error || "Checkout could not be started.");
+        return result;
+      }
+      form.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        if (button.disabled || !form.reportValidity()) return;
+        button.disabled = true;
+        button.classList.add("loading");
+        label.textContent = "Preparing checkout...";
+        showStatus("", "");
+        const values = new FormData(form);
+        const contact = {
+          name: values.get("name"),
+          email: values.get("email"),
+          contact: values.get("contact"),
+        };
+        try {
+          const saveResult = await postJson("/api/checkout/contact", {
+            ...contact,
+            save_contact: document.getElementById("save-contact").checked,
+          });
+          const checkout = await postJson("/api/checkout", { plan: "pro", contact });
+          if (!window.Razorpay) throw new Error("Razorpay Checkout did not load. Please try again.");
+          const razorpay = new window.Razorpay({
+            key: checkout.key_id,
+            subscription_id: checkout.subscription_id,
+            name: "Ennoic",
+            description: "Ennoic Pro monthly subscription",
+            prefill: checkout.prefill,
+            theme: { color: "#ff8a2b" },
+            handler: async function (payment) {
+              try {
+                const verification = await postJson("/api/checkout/verify", payment);
+                showStatus("info", verification.message);
+              } catch (error) {
+                showStatus("error", error.message || "Payment verification failed.");
+              }
+            },
+            modal: {
+              ondismiss: function () {
+                showStatus("info", "Checkout was closed. No subscription was activated.");
+              },
+            },
+          });
+          razorpay.on("payment.failed", function () {
+            showStatus("error", "Razorpay could not authorize the subscription. Please try again.");
+          });
+          razorpay.open();
+          if (saveResult.saved) showStatus("info", "Contact details saved. Complete payment in Razorpay to start Pro.");
+        } catch (error) {
+          showStatus("error", error.message || "Checkout could not be started. Please try again.");
+        } finally {
+          button.disabled = false;
+          button.classList.remove("loading");
+          label.textContent = idleLabel;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

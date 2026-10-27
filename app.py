@@ -11,7 +11,7 @@ from urllib.parse import urljoin
 
 import requests
 
-from flask import Flask, g, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, abort, g, jsonify, redirect, render_template, request, session, url_for
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -21,9 +21,11 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from dotenv import load_dotenv
 
 import account_store
+import billing
+import entitlements
 import task_store
 from main import process_message_with_metadata
-from task_management import resolve_task_confirmation
+from task_management import message_requires_ai, resolve_task_confirmation
 
 
 app = Flask(__name__, instance_relative_config=True)
@@ -106,6 +108,8 @@ def load_user(user_id):
 def unauthorized():
     if request.path.startswith("/api/"):
         return jsonify({"error": "Sign in to continue."}), 401
+    if request.path == "/checkout":
+        session["login_next"] = url_for("checkout_page")
     return redirect(url_for("login_page"))
 
 
@@ -144,14 +148,19 @@ def add_security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
-    bundle_nonce = getattr(g, "landing_csp_nonce", None) or getattr(g, "auth_csp_nonce", None)
+    bundle_nonce = (
+        getattr(g, "landing_csp_nonce", None)
+        or getattr(g, "auth_csp_nonce", None)
+        or getattr(g, "checkout_csp_nonce", None)
+    )
     if bundle_nonce:
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            f"script-src 'self' 'nonce-{bundle_nonce}' 'strict-dynamic' 'unsafe-eval' blob: https://cdn.jsdelivr.net; "
+            f"script-src 'self' 'nonce-{bundle_nonce}' 'strict-dynamic' 'unsafe-eval' blob: https://cdn.jsdelivr.net https://checkout.razorpay.com; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; "
-            "connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; "
+            "connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com https://api.razorpay.com https://checkout.razorpay.com; "
+            "frame-src https://api.razorpay.com https://checkout.razorpay.com; "
             "object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
         )
     else:
@@ -399,6 +408,39 @@ def _logged_in_user():
     return user
 
 
+def _price_currency():
+    """Use a configured trusted geo header, then the browser's locale as a hint."""
+    country = ""
+    country_header = os.environ.get("ENNOIC_COUNTRY_HEADER", "").strip()
+    if country_header:
+        country = request.headers.get(country_header, "").strip().upper()
+    if not country:
+        for language, _quality in request.accept_languages:
+            subtags = language.replace("_", "-").split("-")
+            country = next((part.upper() for part in subtags[1:] if len(part) == 2 and part.isalpha()), "")
+            if country:
+                break
+    return "INR" if country == "IN" else "USD"
+
+
+def _is_configured_admin(email):
+    if not isinstance(email, str):
+        return False
+    configured = {
+        item.strip().casefold()
+        for item in os.environ.get("ENNOIC_ADMIN_EMAILS", "").split(",")
+        if item.strip()
+    }
+    return email.casefold() in configured
+
+
+def _post_login_redirect():
+    target = session.pop("login_next", None)
+    if target == url_for("checkout_page"):
+        return redirect(target)
+    return redirect(url_for("home"))
+
+
 @app.route("/")
 def home():
     if current_user.is_authenticated:
@@ -407,10 +449,169 @@ def home():
     return render_template("landing.html", csp_nonce=g.landing_csp_nonce)
 
 
+@app.route("/settings")
+@login_required
+def settings_page():
+    return render_template(
+        "settings.html",
+        user=current_user,
+        is_admin=_is_configured_admin(current_user.email),
+        csrf_token=generate_csrf(),
+    )
+
+
+@app.route("/pricing")
+def pricing_page():
+    return render_template(
+        "pricing.html",
+        csrf_token=generate_csrf() if current_user.is_authenticated else "",
+    )
+
+
+@app.route("/checkout")
+@login_required
+def checkout_page():
+    g.checkout_csp_nonce = secrets.token_urlsafe(18)
+    currency = _price_currency()
+    return render_template(
+        "checkout.html",
+        user=current_user,
+        contact=account_store.get_checkout_contact(current_user.id),
+        selected_price=entitlements.pro_prices()[currency],
+        csrf_token=generate_csrf(),
+        csp_nonce=g.checkout_csp_nonce,
+    )
+
+
+@app.route("/api/checkout/contact", methods=["POST"])
+@login_required
+@limiter.limit("10 per hour")
+def save_checkout_contact():
+    data = _request_data()
+    if data is None:
+        return jsonify({"error": "Contact details must be a JSON object."}), 400
+    if data.get("save_contact") is not True:
+        return jsonify({
+            "saved": False,
+            "message": "Your contact details will not be saved to your Ennoic account.",
+        })
+    try:
+        contact = account_store.save_checkout_contact(
+            current_user.id,
+            data.get("name"),
+            data.get("email"),
+            data.get("contact"),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({
+        "saved": True,
+        "message": "Your contact details were saved to your Ennoic account.",
+    })
+
+
+@app.route("/admin/users")
+@login_required
+def admin_users():
+    if not _is_configured_admin(current_user.email):
+        abort(404)
+    users = account_store.list_admin_users()
+    return render_template(
+        "admin_users.html",
+        users=users,
+        user_count=len(users),
+        free_count=sum(account["plan"] == "free" for account in users),
+        pro_count=sum(account["plan"] == "pro" for account in users),
+    )
+
+
+@app.route("/api/pricing")
+def pricing_data():
+    language = entitlements.language_for(request.args.get("lang", "en").split("-")[0].lower())
+    return jsonify(entitlements.public_pricing(language, selected_currency=_price_currency()))
+
+
+@app.route("/api/entitlements")
+@login_required
+def current_entitlements():
+    return jsonify(entitlements.account_entitlements(current_user.id))
+
+
+@app.route("/api/checkout", methods=["POST"])
+@login_required
+def create_checkout():
+    data = _request_data() or {}
+    contact_data = data.get("contact")
+    if not isinstance(contact_data, dict):
+        return jsonify({"error": "Checkout contact details are required."}), 400
+    try:
+        contact = account_store.validate_checkout_contact(
+            contact_data.get("name"), contact_data.get("email"), contact_data.get("contact")
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    try:
+        checkout = billing.subscription_service.create_checkout_session(
+            user_id=current_user.id,
+            plan=data.get("plan", "pro"),
+            currency=_price_currency(),
+            return_url=url_for("pricing_page", _external=True),
+            contact=contact,
+        )
+    except billing.PaymentProviderUnavailable as exc:
+        return jsonify({"error": str(exc)}), 503
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    session["razorpay_pending_subscription_id"] = checkout["subscription_id"]
+    return jsonify(checkout), 200
+
+
+@app.route("/api/checkout/verify", methods=["POST"])
+@login_required
+def verify_checkout_payment():
+    data = _request_data() or {}
+    expected_subscription_id = session.get("razorpay_pending_subscription_id")
+    subscription_id = data.get("razorpay_subscription_id")
+    payment_id = data.get("razorpay_payment_id")
+    signature = data.get("razorpay_signature")
+    if (not expected_subscription_id or subscription_id != expected_subscription_id
+            or not isinstance(payment_id, str) or not isinstance(signature, str)):
+        return jsonify({"error": "Could not verify this Razorpay checkout."}), 400
+    try:
+        verified = billing.subscription_service.verify_checkout_payment(
+            subscription_id=expected_subscription_id,
+            payment_id=payment_id,
+            signature=signature,
+        )
+    except billing.PaymentProviderUnavailable as exc:
+        return jsonify({"error": str(exc)}), 503
+    if not verified:
+        return jsonify({"error": "Razorpay payment signature is invalid."}), 400
+    session.pop("razorpay_pending_subscription_id", None)
+    return jsonify({
+        "verified": True,
+        "message": "Payment authorization was verified. Pro access will update when Razorpay confirms the subscription.",
+    })
+
+
+@app.route("/api/razorpay/webhook", methods=["POST"])
+@csrf.exempt
+def razorpay_webhook():
+    payload = request.get_data(cache=True)
+    signature = request.headers.get("X-Razorpay-Signature")
+    try:
+        processed = billing.subscription_service.process_provider_event(payload, signature)
+    except billing.PaymentProviderUnavailable as exc:
+        return jsonify({"error": str(exc)}), 503
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"received": True, "processed": processed}), 200
+
+
 @app.route("/login")
 def login_page():
     if current_user.is_authenticated:
-        return redirect(url_for("home"))
+        return _post_login_redirect()
     active_form = "register" if request.args.get("form") == "register" else "login"
     auth_notice = (
         "Account deletion is scheduled. Sign in again within 30 days to restore your account."
@@ -523,7 +724,8 @@ def google_callback():
     login_user(Account(user), fresh=True)
     session["account_auth_version"] = user["auth_version"]
     session.permanent = True
-    return redirect(url_for("home"))
+    account_store.record_user_login(user["id"], request.remote_addr)
+    return _post_login_redirect()
 
 
 @app.route("/auth/register", methods=["POST"])
@@ -543,6 +745,63 @@ def register():
     return _auth_template(
         auth_notice="If the address can be registered, a verification link will be sent. If it does not arrive, check the app terminal for account_email_delivery_failed and its stage.",
         active_form="login",
+    ), 202
+
+
+@app.route("/auth/continue", methods=["POST"])
+@limiter.limit("10 per minute")
+def continue_auth():
+    email = request.form.get("email", "")
+    password = request.form.get("password", "")
+    try:
+        user = account_store.get_user_by_email(email)
+    except ValueError as exc:
+        return _auth_template(auth_error=str(exc)), 400
+
+    if user is not None:
+        if not account_store.verify_password(user, password):
+            return _auth_template(auth_error="Email or password is incorrect."), 401
+        if not user["email_verified"]:
+            return _auth_template(
+                auth_notice="Please verify your email using the link we sent before signing in."
+            ), 202
+        if user["deleted_at"] is not None:
+            if not account_store.cancel_user_deletion(user["id"]):
+                return _auth_template(auth_error="Email or password is incorrect."), 401
+            user = account_store.get_user(user["id"])
+            session.pop("account_deletion_id", None)
+        login_user(Account(user), fresh=True)
+        session["account_auth_version"] = user["auth_version"]
+        session.permanent = True
+        account_store.record_user_login(user["id"], request.remote_addr)
+        return _post_login_redirect()
+
+    try:
+        account_store.validate_password(password)
+    except ValueError as exc:
+        return _auth_template(auth_error=str(exc)), 400
+    if not _email_delivery_configured():
+        return _auth_template(
+            auth_error="Account email delivery is not configured. Ask the server administrator before signing up."
+        ), 503
+
+    try:
+        user = account_store.create_user(email, password)
+    except ValueError as exc:
+        return _auth_template(auth_error=str(exc)), 400
+    if user is None:
+        # A parallel request may have created the account after the initial lookup.
+        user = account_store.get_user_by_email(email)
+        if user and account_store.verify_password(user, password) and user["email_verified"]:
+            login_user(Account(user), fresh=True)
+            session["account_auth_version"] = user["auth_version"]
+            session.permanent = True
+            account_store.record_user_login(user["id"], request.remote_addr)
+            return _post_login_redirect()
+    else:
+        _send_token_email(user, "verify")
+    return _auth_template(
+        auth_notice="If this address can be registered, a verification link will be sent. Check your inbox and spam folder."
     ), 202
 
 
@@ -570,7 +829,8 @@ def login():
     login_user(Account(user), fresh=True)
     session["account_auth_version"] = user["auth_version"]
     session.permanent = True
-    return redirect(url_for("home"))
+    account_store.record_user_login(user["id"], request.remote_addr)
+    return _post_login_redirect()
 
 
 @app.route("/auth/logout", methods=["POST"])
@@ -608,7 +868,7 @@ def resend_verification():
         auth_notice=(
             "Verification email sent. Check your inbox and spam folder."
             if sent
-            else "If an unverified account matches that address, Ennoic tried to send a link. If none arrives, check the app terminal for account_email_delivery_failed and its stage."
+            else ""
         )
     ), 202
 
@@ -676,6 +936,7 @@ def change_password():
     login_user(Account(updated), fresh=True)
     session["account_auth_version"] = updated["auth_version"]
     session.permanent = True
+    account_store.record_user_login(updated["id"], request.remote_addr)
     return jsonify({"changed": True, "csrf_token": generate_csrf()})
 
 
@@ -722,7 +983,16 @@ def csrf_token():
 @login_required
 def conversations():
     if request.method == "GET":
-        return jsonify({"conversations": account_store.list_conversations(current_user.id)})
+        plan = entitlements.account_entitlements(current_user.id)
+        history_limit = plan["usage"]["conversations"]["limit"]
+        saved = account_store.list_conversations(current_user.id, limit=history_limit)
+        total = account_store.count_conversations(current_user.id)
+        return jsonify({
+            "conversations": saved,
+            "total": total,
+            "history_limit": history_limit,
+            "has_more": history_limit is not None and total > history_limit,
+        })
     data = _request_data()
     title = data.get("title") if data else None
     if not isinstance(title, str) or not title.strip() or len(title.strip()) > 120:
@@ -883,12 +1153,58 @@ def chat():
     conversation = account_store.get_conversation(current_user.id, conversation_id)
     if conversation is None:
         return jsonify({"error": "Conversation not found."}), 404
+    account_limits = entitlements.account_entitlements(current_user.id)
+    history_limit = account_limits["usage"]["conversations"]["limit"]
+    if history_limit is not None and not account_store.conversation_is_in_window(
+        current_user.id, conversation_id, history_limit
+    ):
+        return jsonify({
+            "error": "This conversation is outside your plan's available history. Upgrade to Pro to access older conversations.",
+            "code": "conversation_history_limit",
+            "upgrade_url": url_for("pricing_page"),
+            "limit": history_limit,
+        }), 403
+
+    request_id = data.get("request_id") or request.headers.get("Idempotency-Key") or secrets.token_urlsafe(24)
+    if not isinstance(request_id, str) or not (16 <= len(request_id) <= 100):
+        return jsonify({"error": "A valid request ID is required."}), 400
+    request_hash = hashlib.sha256(
+        (conversation_id + "\0" + message.strip()).encode("utf-8")
+    ).hexdigest()
+    billable = message_requires_ai(message.strip(), conversation_id, current_user.id)
+    period_start, period_end = entitlements.current_period()
+    ai_limit = account_limits["usage"]["ai_requests"]["limit"]
+    reservation = account_store.reserve_ai_request(
+        current_user.id,
+        request_id,
+        request_hash,
+        period_start,
+        period_end,
+        ai_limit,
+        billable=billable,
+    )
+    if reservation["state"] == "limit":
+        return jsonify({
+            "error": f"You've used all {ai_limit} AI requests in this month's Free plan. Your usage resets on {period_end[:10]}.",
+            "code": "ai_usage_limit",
+            "used": reservation["used"],
+            "limit": ai_limit,
+            "resets_at": period_end,
+            "upgrade_url": url_for("pricing_page"),
+        }), 429
+    if reservation["state"] == "conflict":
+        return jsonify({"error": "This request ID was already used for a different message.", "code": "idempotency_conflict"}), 409
+    if reservation["state"] == "in_progress":
+        return jsonify({"error": "This message is still being processed. Try again in a moment.", "code": "request_in_progress"}), 409
+    if reservation["state"] == "completed":
+        return jsonify(reservation["response"]), reservation["response_status"]
     try:
         result = process_message_with_metadata(
             message.strip(),
             conversation["messages"],
             conversation_id,
             user_id=current_user.id,
+            max_memories=account_limits["usage"]["memories"]["limit"],
         )
         assistant_message = {
             "role": "assistant",
@@ -915,8 +1231,20 @@ def chat():
             conversation["messages"],
             assistant_message,
         )
+        account_store.complete_ai_request(current_user.id, request_id, result)
         return jsonify(result)
+    except account_store.MemoryCapacityReached as exc:
+        response = {
+            "error": f"Your plan's {exc.limit}-memory capacity is full. Existing memories are still available. Upgrade for more capacity.",
+            "code": "memory_capacity_limit",
+            "used": exc.used,
+            "limit": exc.limit,
+            "upgrade_url": url_for("pricing_page"),
+        }
+        account_store.complete_ai_request(current_user.id, request_id, response, response_status=403)
+        return jsonify(response), 403
     except Exception:
+        account_store.release_ai_request(current_user.id, request_id)
         app.logger.exception("Failed to process chat message")
         return jsonify({"error": "Ennoic couldn't process that message."}), 500
 

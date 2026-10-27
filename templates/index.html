@@ -141,33 +141,5 @@
     </form>
   </dialog>
 
-  <dialog id="settings" aria-labelledby="settings-title">
-    <h2 id="settings-title" data-i18n="settings">Settings</h2>
-    <section class="settings-section" aria-labelledby="settings-general-title">
-      <h3 id="settings-general-title" data-i18n="settingsGeneral">General</h3>
-      <label for="language-select" data-i18n="displayLanguage">Display language</label>
-      <select id="language-select">
-        <option value="en">English</option>
-        <option value="es">Español</option>
-        <option value="fr">Français</option>
-      </select>
-      <p id="language-description" data-i18n="languageExplanation">This changes the interface language. AI-generated replies are not automatically translated.</p>
-      <p class="settings-status" id="settings-status" role="status" aria-live="polite"></p>
-    </section>
-    <section class="settings-section" aria-labelledby="settings-account-title">
-      <h3 id="settings-account-title" data-i18n="settingsAccount">Account</h3>
-      <p data-i18n="deleteAccountExplanation">Deleting your account permanently removes its tasks, conversations, memories, and account details from this server.</p>
-      <button class="btn danger" id="delete-account" type="button" data-i18n="deleteAccount">Delete account</button>
-    </section>
-    <div class="dialog-actions">
-      <form id="sign-out-form" method="post" action="{{ url_for('logout') }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button class="btn danger" id="sign-out" type="submit" data-i18n="signOut">Sign out</button>
-      </form>
-      <form method="dialog">
-        <button class="btn" type="submit" data-i18n="close">Close</button>
-      </form>
-    </div>
-  </dialog>
 </body>
 </html>

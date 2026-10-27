@@ -21,10 +21,7 @@ const els = {
   historyStatus: $("history-status"),
   thread: $("thread"), stage: $("stage"), greeting: $("greeting"), empty: $("empty-state"), messages: $("messages"),
   form: $("composer"), input: $("composer-input"), send: $("send"),
-  settings: $("settings"), openSettings: $("open-settings"),
-  languageSelect: $("language-select"), settingsStatus: $("settings-status"),
-  deleteAccount: $("delete-account"),
-  signOutForm: $("sign-out-form"),
+  openSettings: $("open-settings"),
   taskFilters: $("task-filters"), taskSearch: $("task-search"), taskList: $("task-list"),
   taskStatus: $("task-status"), createTask: $("create-task"), taskEditor: $("task-editor"),
   taskEditorForm: $("task-editor-form"), taskEditorTitle: $("task-editor-title"),
@@ -45,6 +42,8 @@ let taskSearchTimer = null;
 const mobile = window.matchMedia("(max-width: 900px)");
 const stackedPanels = window.matchMedia("(max-width: 940px)");
 const t = (key, values) => EnnoicI18n.translate(language, key, values);
+let hasMoreConversationHistory = false;
+let conversationHistoryLimit = null;
 
 function loadConversations() {
   try {
@@ -233,6 +232,17 @@ function showHistoryStatus(message, isError = false) {
   els.historyStatus.textContent = message;
   els.historyStatus.classList.toggle("error", isError);
   els.historyStatus.hidden = !message;
+}
+
+function showHistoryPlanNotice(limit) {
+  els.historyStatus.replaceChildren();
+  els.historyStatus.classList.remove("error");
+  els.historyStatus.append(document.createTextNode(t("historyLimitNotice", { limit })));
+  const link = document.createElement("a");
+  link.href = "/pricing";
+  link.textContent = t("viewPlans");
+  els.historyStatus.append(document.createTextNode(" "), link);
+  els.historyStatus.hidden = false;
 }
 
 function closeConversationMenus(except = null) {
@@ -650,7 +660,9 @@ async function requestJSON(url, options = {}) {
   }
   if (!response.ok) {
     if (response.status === 401) window.location.assign("/");
-    throw new Error(typeof data.error === "string" ? data.error : `The server returned status ${response.status}.`);
+    const error = new Error(typeof data.error === "string" ? data.error : `The server returned status ${response.status}.`);
+    Object.assign(error, data);
+    throw error;
   }
   return data;
 }
@@ -943,18 +955,43 @@ function loadingEl() {
 }
 
 function errorEl(convo, err) {
-  const detail = err instanceof TypeError ? t("cannotReachServer") : err.message;
   const div = document.createElement("div");
   div.className = "message error";
   div.setAttribute("role", "alert");
   const p = document.createElement("p");
-  p.textContent = t("responseError", { detail });
-  const retry = document.createElement("button");
-  retry.type = "button";
-  retry.className = "retry";
-  retry.textContent = t("retry");
-  retry.addEventListener("click", () => { div.remove(); getReply(convo); });
-  div.append(p, retry);
+  const limitMessages = {
+    ai_usage_limit: t("aiLimitReached", {
+      limit: err.limit,
+      date: typeof err.resets_at === "string" ? err.resets_at.slice(0, 10) : "",
+    }),
+    memory_capacity_limit: t("memoryLimitReached"),
+    conversation_history_limit: t("historyLimitReached"),
+  };
+  const limitMessage = limitMessages[err.code];
+  const detail = err instanceof TypeError ? t("cannotReachServer") : err.message;
+  p.textContent = limitMessage || t("responseError", { detail });
+  div.append(p);
+  if (limitMessage) {
+    const latestUser = [...convo.messages].reverse().find((message) => message.role === "user");
+    if (latestUser && !els.input.value) {
+      els.input.value = latestUser.text;
+      autoGrow();
+      updateSendButton();
+    }
+    const upgrade = document.createElement("a");
+    upgrade.href = typeof err.upgrade_url === "string" && err.upgrade_url.startsWith("/")
+      ? err.upgrade_url
+      : "/pricing";
+    upgrade.textContent = t("upgradeForMore");
+    div.append(upgrade);
+  } else {
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "retry";
+    retry.textContent = t("retry");
+    retry.addEventListener("click", () => { div.remove(); getReply(convo); });
+    div.append(retry);
+  }
   return div;
 }
 
@@ -973,7 +1010,7 @@ async function submitThought(text) {
     conversations.unshift(convo);
     activeId = convo.id;
   }
-  convo.messages.push({ role: "user", text });
+  convo.messages.push({ role: "user", text, request_id: crypto.randomUUID() });
   saveConversations();
   render();
   scrollLatestUserToTop();
@@ -1034,11 +1071,12 @@ async function requestReply(convo) {
     saveConversations();
     renderHistory();
   }
-  const message = convo.messages[convo.messages.length - 1].text;
+  const userMessage = convo.messages[convo.messages.length - 1];
+  const message = userMessage.text;
   const data = await requestJSON(API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ conversation_id: convo.id, message }),
+    body: JSON.stringify({ conversation_id: convo.id, message, request_id: userMessage.request_id }),
   });
   if (typeof data.reply !== "string") throw new Error(t("responseMissingReply"));
   return {
@@ -1086,61 +1124,9 @@ function startNewChat() {
 }
 els.newChat.addEventListener("click", startNewChat);
 els.search.addEventListener("input", renderHistory);
-els.openSettings.addEventListener("click", () => {
-  els.settingsStatus.textContent = "";
-  els.settings.showModal();
-});
-els.languageSelect.addEventListener("change", () => {
-  const nextLanguage = els.languageSelect.value;
-  if (!EnnoicI18n.supportedLanguages.includes(nextLanguage)) {
-    els.languageSelect.value = language;
-    return;
-  }
-  try {
-    localStorage.setItem(LANGUAGE_KEY, nextLanguage);
-    localStorage.setItem("ennoic-mind:language", nextLanguage);
-  } catch {
-    els.languageSelect.value = language;
-    els.settingsStatus.textContent = t("languageSaveFailed");
-    return;
-  }
-  language = nextLanguage;
-  els.settingsStatus.textContent = "";
-  EnnoicI18n.applyTranslations(language);
-  render();
-  loadTasks();
-  if (els.taskEditor.open) {
-    els.taskEditorTitle.textContent = editingTaskId ? t("editTask") : t("newTask");
-    els.saveTask.textContent = editingTaskId ? t("saveChanges") : t("saveTask");
-  }
-});
-els.signOutForm.addEventListener("submit", (event) => {
-  if (!window.confirm(t("signOutConfirm"))) event.preventDefault();
-});
-els.deleteAccount.addEventListener("click", async () => {
-  if (!window.confirm(t("deleteAccountConfirm"))) return;
-  const typedEmail = window.prompt(t("deleteAccountPrompt", { email: els.app.dataset.userEmail }));
-  if (typedEmail === null) return;
-  els.deleteAccount.disabled = true;
-  els.settingsStatus.textContent = "";
-  try {
-    await requestJSON("/api/account", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: typedEmail }),
-    });
-    for (const key of [STORAGE_KEY, ACTIVE_ID_KEY, LANGUAGE_KEY]) {
-      try { localStorage.removeItem(key); } catch { /* the server account is already deleted */ }
-    }
-    window.location.assign("/login?deletion=scheduled");
-  } catch (error) {
-    els.settingsStatus.textContent = error.message || t("deleteAccountFailed");
-    els.deleteAccount.disabled = false;
-  }
-});
+els.openSettings.addEventListener("click", () => window.location.assign("/settings"));
 
 /* ---------- Start ---------- */
-els.languageSelect.value = language;
 EnnoicI18n.applyTranslations(language);
 const greetingHour = new Date().getHours();
 const greetingKey = greetingHour < 12 ? "greetingMorning"
@@ -1154,13 +1140,16 @@ render();
 updateSendButton();
 loadTasks();
 requestJSON("/api/conversations")
-  .then(({ conversations: saved }) => {
+  .then(({ conversations: saved, has_more: hasMore, history_limit: historyLimit }) => {
+    hasMoreConversationHistory = hasMore === true;
+    conversationHistoryLimit = historyLimit;
     conversations = saved.map((conversation) => ({ ...conversation, serverPersisted: true }));
     if (!conversations.some((conversation) => conversation.id === activeId)) {
       activeId = null;
     }
     saveConversations();
     render();
+    if (hasMore) showHistoryPlanNotice(historyLimit);
   })
   .catch((err) => showHistoryStatus(err.message || t("conversationSaveFailed"), true));
 if (!mobile.matches) els.input.focus();

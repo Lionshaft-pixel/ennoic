@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <meta name="color-scheme" content="dark">
+  <title>Settings · Ennoic</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/settings.css">
+  <script src="/static/i18n.js" defer></script>
+  <script src="/static/settings.js" defer></script>
+</head>
+<body>
+  <a class="settings-skip" href="#settings-content" data-i18n="skipToSettings">Skip to settings</a>
+  <div class="settings-shell" id="settings-app" data-user-id="{{ user.id }}" data-user-email="{{ user.email }}">
+    <aside class="settings-sidebar" id="settings-sidebar" aria-label="Settings navigation" data-i18n-aria-label="settingsNavigation">
+      <div class="settings-sidebar-top">
+        <button class="sidebar-toggle" id="settings-sidebar-toggle" type="button" aria-label="Collapse sidebar" aria-expanded="true" data-i18n-aria-label="collapseSettingsSidebar">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM9 4v16"/></svg>
+        </button>
+        <a class="back-to-app" href="/" aria-label="Back to app" data-i18n-aria-label="backToApp">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"/></svg>
+          <span data-i18n="backToApp">Back to app</span>
+        </a>
+      </div>
+      <label class="settings-search-wrap">
+        <span class="visually-hidden" data-i18n="searchSettings">Search settings</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg>
+        <input id="settings-search" type="search" placeholder="Search" data-i18n-placeholder="searchSettingsPlaceholder" autocomplete="off">
+      </label>
+      <nav class="settings-nav" aria-label="Settings sections" data-i18n-aria-label="settingsSections">
+        <p class="settings-nav-caption" data-i18n="personal">Personal</p>
+        <button class="settings-nav-item" type="button" data-section="general" aria-current="page" data-search-label="General">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10m4 0h2M4 17h2m4 0h10M14 7a2 2 0 1 0 4 0 2 2 0 0 0-4 0ZM6 17a2 2 0 1 0 4 0 2 2 0 0 0-4 0Z"/></svg><span data-i18n="settingsGeneral">General</span>
+        </button>
+        <button class="settings-nav-item" type="button" data-section="profile" aria-current="false" data-search-label="Profile">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="9" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></svg><span data-i18n="settingsProfile">Profile</span>
+        </button>
+        <button class="settings-nav-item" type="button" data-section="account" aria-current="false" data-search-label="Account">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="9" cy="11" r="2"/><path d="M5.5 16c.6-1.6 1.9-2.3 3.5-2.3s2.9.7 3.5 2.3M14 10h4m-4 4h4"/></svg><span data-i18n="settingsAccount">Account</span>
+        </button>
+        <p class="settings-no-matches" id="settings-no-matches" hidden data-i18n="settingsNoMatches">No settings match your search.</p>
+      </nav>
+      <div class="sidebar-account"><span class="sidebar-avatar" aria-hidden="true">{{ user.email[0]|upper }}</span><span class="sidebar-email" title="{{ user.email }}">{{ user.email }}</span></div>
+    </aside>
+
+    <main class="settings-main" id="settings-content">
+      <div class="settings-content-inner">
+        <header class="settings-page-header">
+          <p class="settings-eyebrow">ENNOIC</p>
+          <h1 id="settings-page-title" data-i18n="settingsGeneral">General</h1>
+        </header>
+
+        <section class="settings-panel" data-settings-panel="general" aria-labelledby="general-card-title">
+          <div class="panel-heading"><div><p class="panel-kicker" data-i18n="preferences">PREFERENCES</p><h2 id="general-card-title" data-i18n="generalPreferences">General preferences</h2></div><span class="panel-icon" aria-hidden="true">✦</span></div>
+          <div class="setting-row"><div class="setting-copy"><label for="settings-language" data-i18n="displayLanguage">Display language</label><p data-i18n="languageExplanation">This changes the interface language. AI-generated replies are not automatically translated.</p></div>
+            <select id="settings-language"><option value="en">English</option><option value="es">Español</option><option value="fr">Français</option></select>
+          </div>
+          <p class="settings-feedback" id="general-feedback" role="status" aria-live="polite"></p>
+        </section>
+
+        <section class="settings-panel" data-settings-panel="profile" aria-labelledby="profile-card-title" hidden>
+          <div class="panel-heading"><div><p class="panel-kicker" data-i18n="accountDetails">ACCOUNT DETAILS</p><h2 id="profile-card-title" data-i18n="settingsProfile">Profile</h2></div><span class="panel-icon" aria-hidden="true">◎</span></div>
+          <div class="setting-row profile-row"><div class="setting-copy"><span class="setting-label" data-i18n="email">Email</span><p data-i18n="profileEmailDescription">This is the email address connected to your account.</p></div><span class="profile-email">{{ user.email }}</span></div>
+          <p class="settings-feedback" id="profile-feedback" role="status" aria-live="polite"></p>
+        </section>
+
+        <section class="settings-panel" data-settings-panel="account" aria-labelledby="account-card-title" hidden>
+          <div class="panel-heading"><div><p class="panel-kicker" data-i18n="accountDetails">ACCOUNT DETAILS</p><h2 id="account-card-title" data-i18n="settingsAccount">Account</h2></div><span class="panel-icon" aria-hidden="true">◈</span></div>
+          {% if is_admin %}<a class="settings-button quiet-button admin-users-link" href="/admin/users" data-i18n="manageUsers">Manage users</a>{% endif %}
+          <div class="plan-card">
+            <div class="plan-heading"><div><p class="panel-kicker" data-i18n="planAndUsage">PLAN AND USAGE</p><h3 id="account-plan-name" data-i18n="planFree">Free plan</h3></div><span class="plan-pill" id="account-plan-status" data-i18n="loading">Loading…</span></div>
+            <div class="ai-usage-block" aria-live="polite">
+              <div class="ai-usage-heading"><span data-i18n="aiRequestUsage">AI requests used</span><strong id="account-ai-percent">0%</strong></div>
+              <div class="usage-track" id="account-ai-progress" role="progressbar" aria-label="AI requests used" data-i18n-aria-label="aiRequestUsage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="account-ai-progress-fill"></span></div>
+              <p class="usage-reset" id="account-ai-reset"></p>
+            </div>
+            <div class="upgrade-prompt" id="account-upgrade-prompt" hidden>
+              <p data-i18n="upgradeForHigherUse">Upgrade for higher use</p>
+              <a class="settings-button primary-button" href="/pricing" data-i18n="upgrade">Upgrade</a>
+            </div>
+          </div>
+          <section class="account-subsection" aria-labelledby="password-settings-title">
+            <h3 id="password-settings-title" data-i18n="passwordSettingsTitle">Password</h3>
+            <form class="settings-form" id="password-form">
+              <label for="current-password" data-i18n="currentPassword">Current password</label>
+              <input id="current-password" name="current_password" type="password" autocomplete="current-password" required>
+              <label for="new-password" data-i18n="newPassword">New password</label>
+              <input id="new-password" name="new_password" type="password" autocomplete="new-password" minlength="12" required>
+              <p class="form-hint" data-i18n="passwordLengthHint">Use at least 12 characters.</p>
+              <button class="settings-button primary-button" id="password-submit" type="submit" data-i18n="changePassword">Change password</button>
+              <p class="settings-feedback" id="password-feedback" role="status" aria-live="polite"></p>
+            </form>
+          </section>
+          <div class="danger-card"><div><h3 data-i18n="deleteAccount">Delete account</h3><p data-i18n="deleteAccountExplanation">Your account is disabled immediately. Its server data is permanently removed after 30 days. Sign in again during that period to restore it.</p></div><button class="settings-button danger-button" id="delete-account" type="button" data-i18n="deleteAccount">Delete account</button></div>
+          <p class="settings-feedback" id="account-feedback" role="status" aria-live="polite"></p>
+          <form method="post" action="{{ url_for('logout') }}" id="settings-sign-out-form" class="account-signout-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="settings-button quiet-button" type="submit" data-i18n="signOut">Sign out</button>
+          </form>
+        </section>
+
+        <footer class="settings-footer">
+          <a class="footer-back" href="/" data-i18n="backToApp">Back to app</a>
+        </footer>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

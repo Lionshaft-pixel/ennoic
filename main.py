@@ -112,7 +112,7 @@ def is_contextual_followup(message, history):
     return bool(CONTEXTUAL_FOLLOWUP_PATTERN.match(message.strip()))
 
 
-def process_message_with_metadata(message, history=None, conversation_id=None, *, user_id=None):
+def process_message_with_metadata(message, history=None, conversation_id=None, *, user_id=None, max_memories=None):
     print("Thinking...")
     conversation_history = normalize_conversation_history(history, message)
     task_response = maybe_handle_task_message(
@@ -175,7 +175,13 @@ def process_message_with_metadata(message, history=None, conversation_id=None, *
         truncated = completion["finish_reason"] == "length"
 
     elif mode == "remember":
-        response = account_store.remember(user_id, person, object, time)
+        response = account_store.remember(
+            user_id,
+            person,
+            object,
+            time,
+            max_memories=max_memories,
+        )
 
     elif mode == "ask":
         intent = ai_data["intent"]

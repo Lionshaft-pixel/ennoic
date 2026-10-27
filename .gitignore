@@ -9,3 +9,4 @@ __pycache__/
 .env
 instance/
 *.sqlite3.legacy-backup-*
+admin_users.html

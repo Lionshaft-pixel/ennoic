@@ -73,6 +73,14 @@ def _confirmation_choice(message):
     return None
 
 
+def message_requires_ai(message, conversation_id, user_id):
+    """Typed duplicate confirmations are deterministic and do not consume AI usage."""
+    return not (
+        _confirmation_choice(message)
+        and task_store.list_task_proposals(conversation_id, user_id=user_id)
+    )
+
+
 def _format_confirmation_result(result):
     choice = result["choice"]
     if choice == "cancel":

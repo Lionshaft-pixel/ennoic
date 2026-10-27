@@ -14,12 +14,34 @@ from werkzeug.security import check_password_hash, generate_password_hash
 DEFAULT_DATABASE_PATH = Path(__file__).resolve().with_name("tasks.sqlite3")
 
 
+class MemoryCapacityReached(Exception):
+    def __init__(self, used, limit):
+        super().__init__("The account's memory capacity has been reached.")
+        self.used = used
+        self.limit = limit
+
+
 def database_path():
     return Path(os.environ.get("ENNOIC_TASK_DB", DEFAULT_DATABASE_PATH))
 
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def _timestamp_after(value, reference):
+    if not value:
+        return False
+    try:
+        parsed_value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed_reference = datetime.fromisoformat(reference.replace("Z", "+00:00"))
+    except (AttributeError, TypeError, ValueError):
+        return False
+    if parsed_value.tzinfo is None:
+        parsed_value = parsed_value.replace(tzinfo=timezone.utc)
+    if parsed_reference.tzinfo is None:
+        parsed_reference = parsed_reference.replace(tzinfo=timezone.utc)
+    return parsed_value > parsed_reference
 
 
 @contextmanager
@@ -54,7 +76,9 @@ def initialize():
                 password_changed_at TEXT,
                 auth_version INTEGER NOT NULL DEFAULT 0,
                 deleted_at TEXT,
-                purge_after TEXT
+                purge_after TEXT,
+                last_login_at TEXT,
+                last_login_ip TEXT
             )
             """
         )
@@ -67,6 +91,10 @@ def initialize():
             db.execute("ALTER TABLE users ADD COLUMN deleted_at TEXT")
         if "purge_after" not in user_columns:
             db.execute("ALTER TABLE users ADD COLUMN purge_after TEXT")
+        if "last_login_at" not in user_columns:
+            db.execute("ALTER TABLE users ADD COLUMN last_login_at TEXT")
+        if "last_login_ip" not in user_columns:
+            db.execute("ALTER TABLE users ADD COLUMN last_login_ip TEXT")
         db.execute(
             """
             CREATE TABLE IF NOT EXISTS account_deletion_audit (
@@ -99,6 +127,81 @@ def initialize():
             "CREATE INDEX IF NOT EXISTS account_deletion_audit_lookup "
             "ON account_deletion_audit(account_ref, requested_at DESC)"
         )
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS account_subscriptions (
+                user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                plan TEXT NOT NULL DEFAULT 'free' CHECK (plan IN ('free', 'pro')),
+                status TEXT NOT NULL DEFAULT 'free' CHECK (status IN ('free', 'pending', 'active', 'canceled', 'past_due', 'expired')),
+                provider TEXT,
+                provider_subscription_id TEXT,
+                period_start TEXT,
+                period_end TEXT,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        db.execute(
+            "INSERT OR IGNORE INTO account_subscriptions (user_id, plan, status, updated_at) "
+            "SELECT id, 'free', 'free', ? FROM users",
+            (_now(),),
+        )
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS checkout_contacts (
+                user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                full_name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS account_usage (
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                meter TEXT NOT NULL,
+                period_start TEXT NOT NULL,
+                used INTEGER NOT NULL DEFAULT 0 CHECK (used >= 0),
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, meter, period_start)
+            )
+            """
+        )
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ai_requests (
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                request_id TEXT NOT NULL,
+                period_start TEXT NOT NULL,
+                request_hash TEXT NOT NULL,
+                state TEXT NOT NULL CHECK (state IN ('reserved', 'completed', 'failed')),
+                billable INTEGER NOT NULL DEFAULT 1 CHECK (billable IN (0, 1)),
+                response_json TEXT,
+                response_status INTEGER,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, request_id)
+            )
+            """
+        )
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS processed_subscription_events (
+                provider TEXT NOT NULL,
+                event_id TEXT NOT NULL,
+                processed_at TEXT NOT NULL,
+                PRIMARY KEY (provider, event_id)
+            )
+            """
+        )
+        ai_request_columns = {
+            row["name"] for row in db.execute("PRAGMA table_info(ai_requests)").fetchall()
+        }
+        if "billable" not in ai_request_columns:
+            db.execute("ALTER TABLE ai_requests ADD COLUMN billable INTEGER NOT NULL DEFAULT 1")
         db.execute(
             """
             CREATE TABLE IF NOT EXISTS account_tokens (
@@ -216,6 +319,10 @@ def create_user(email, password):
                 "INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)",
                 (user_id, normalized, generate_password_hash(password, method="pbkdf2:sha256:600000"), _now()),
             )
+            db.execute(
+                "INSERT INTO account_subscriptions (user_id, plan, status, updated_at) VALUES (?, 'free', 'free', ?)",
+                (user_id, _now()),
+            )
     except sqlite3.IntegrityError:
         return None
     return get_user(user_id)
@@ -240,6 +347,92 @@ def get_user_by_email(email):
             (normalized,),
         ).fetchone()
     return dict(row) if row else None
+
+
+def record_user_login(user_id, client_ip):
+    ip_value = client_ip.strip()[:64] if isinstance(client_ip, str) else None
+    with connection() as db:
+        cursor = db.execute(
+            "UPDATE users SET last_login_at = ?, last_login_ip = ? WHERE id = ? AND deleted_at IS NULL",
+            (_now(), ip_value or None, user_id),
+        )
+    return cursor.rowcount == 1
+
+
+def validate_checkout_contact(full_name, email, phone):
+    if not isinstance(full_name, str):
+        raise ValueError("Enter your full name.")
+    full_name = full_name.strip()
+    if len(full_name) < 2 or len(full_name) > 120 or any(ord(char) < 32 for char in full_name):
+        raise ValueError("Enter a valid name between 2 and 120 characters.")
+    email = normalize_email(email)
+    if not isinstance(phone, str):
+        raise ValueError("Enter a valid mobile number.")
+    phone = phone.strip()
+    digits = "".join(char for char in phone if char.isdigit())
+    if (len(phone) > 32 or len(digits) < 7 or len(digits) > 15
+            or any(char not in "+0123456789 ()-" for char in phone)):
+        raise ValueError("Enter a valid mobile number with 7 to 15 digits.")
+    return {"full_name": full_name, "email": email, "phone": phone}
+
+
+def save_checkout_contact(user_id, full_name, email, phone):
+    contact = validate_checkout_contact(full_name, email, phone)
+    full_name, email, phone = contact["full_name"], contact["email"], contact["phone"]
+    now = _now()
+    with connection() as db:
+        db.execute(
+            """
+            INSERT INTO checkout_contacts (user_id, full_name, email, phone, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                full_name = excluded.full_name,
+                email = excluded.email,
+                phone = excluded.phone,
+                updated_at = excluded.updated_at
+            """,
+            (user_id, full_name, email, phone, now, now),
+        )
+    return get_checkout_contact(user_id)
+
+
+def get_checkout_contact(user_id):
+    with connection() as db:
+        row = db.execute(
+            "SELECT full_name, email, phone, created_at, updated_at FROM checkout_contacts WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_admin_users():
+    with connection() as db:
+        rows = db.execute(
+            """
+            SELECT u.id, u.email, u.email_verified, u.created_at, u.deleted_at, u.purge_after,
+                   u.last_login_at, u.last_login_ip,
+                   COALESCE(s.plan, 'free') AS plan,
+                   COALESCE(s.status, 'free') AS subscription_status,
+                   s.period_end, s.provider,
+                   c.full_name AS contact_name, c.email AS contact_email,
+                   c.phone AS contact_phone, c.updated_at AS contact_updated_at
+            FROM users AS u
+            LEFT JOIN account_subscriptions AS s ON s.user_id = u.id
+            LEFT JOIN checkout_contacts AS c ON c.user_id = u.id
+            ORDER BY u.created_at DESC, u.email COLLATE NOCASE
+            """
+        ).fetchall()
+    result = []
+    for row in rows:
+        user = dict(row)
+        subscription = get_account_subscription(user["id"])
+        if subscription:
+            user["plan"] = subscription["plan"]
+            user["subscription_status"] = subscription["status"]
+            user["period_end"] = subscription["period_end"]
+            user["provider"] = subscription["provider"]
+        result.append(user)
+    return result
 
 
 def schedule_user_deletion(user_id, client_ip, *, grace_days=30, audit_retention_days=90):
@@ -427,13 +620,29 @@ def get_conversation(user_id, conversation_id):
     return _conversation_from_row(row) if row else None
 
 
-def list_conversations(user_id):
+def list_conversations(user_id, *, limit=None):
+    if limit is not None:
+        limit = max(0, int(limit))
     with connection() as db:
+        query = "SELECT * FROM conversations WHERE user_id = ? ORDER BY pinned DESC, updated_at DESC, id DESC"
+        parameters = [user_id]
+        if limit is not None:
+            query += " LIMIT ?"
+            parameters.append(limit)
         rows = db.execute(
-            "SELECT * FROM conversations WHERE user_id = ? ORDER BY pinned DESC, updated_at DESC",
-            (user_id,),
+            query,
+            parameters,
         ).fetchall()
     return [_conversation_from_row(row) for row in rows]
+
+
+def count_conversations(user_id):
+    with connection() as db:
+        return db.execute("SELECT COUNT(*) FROM conversations WHERE user_id = ?", (user_id,)).fetchone()[0]
+
+
+def conversation_is_in_window(user_id, conversation_id, limit):
+    return any(item["id"] == conversation_id for item in list_conversations(user_id, limit=limit))
 
 
 def _conversation_from_row(row):
@@ -555,7 +764,12 @@ def list_memories(user_id):
     return [dict(row) for row in rows]
 
 
-def remember(user_id, person, object_name, time_value):
+def count_memories(user_id):
+    with connection() as db:
+        return db.execute("SELECT COUNT(*) FROM memories WHERE user_id = ?", (user_id,)).fetchone()[0]
+
+
+def remember(user_id, person, object_name, time_value, *, max_memories=None):
     with connection() as db:
         existing = db.execute(
             "SELECT id FROM memories WHERE user_id = ? AND person = ? COLLATE NOCASE "
@@ -568,12 +782,168 @@ def remember(user_id, person, object_name, time_value):
                 (time_value, _now(), existing["id"], user_id),
             )
             return "Updated existing memory"
+        if max_memories is not None:
+            used = db.execute("SELECT COUNT(*) FROM memories WHERE user_id = ?", (user_id,)).fetchone()[0]
+            if used >= max_memories:
+                raise MemoryCapacityReached(used, max_memories)
         db.execute(
             "INSERT INTO memories (id, user_id, person, object, time, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (str(uuid.uuid4()), user_id, person, object_name, time_value, _now(), _now()),
         )
     return "Stored new memory"
+
+
+def get_account_subscription(user_id, *, now=None):
+    now = now or _now()
+    with connection() as db:
+        row = db.execute("SELECT * FROM account_subscriptions WHERE user_id = ?", (user_id,)).fetchone()
+        if row is None:
+            return None
+        subscription = dict(row)
+        if (
+            subscription["plan"] == "pro"
+            and subscription["status"] in {"active", "canceled"}
+            and subscription["period_end"]
+            and not _timestamp_after(subscription["period_end"], now)
+        ):
+            db.execute(
+                "UPDATE account_subscriptions SET plan = 'free', status = 'expired', "
+                "provider_subscription_id = NULL, period_start = NULL, period_end = NULL, updated_at = ? "
+                "WHERE user_id = ?",
+                (now, user_id),
+            )
+            subscription.update(
+                plan="free", status="expired", provider_subscription_id=None,
+                period_start=None, period_end=None, updated_at=now,
+            )
+    return subscription
+
+
+def get_usage(user_id, meter, period_start):
+    with connection() as db:
+        row = db.execute(
+            "SELECT used FROM account_usage WHERE user_id = ? AND meter = ? AND period_start = ?",
+            (user_id, meter, period_start),
+        ).fetchone()
+    return row["used"] if row else 0
+
+
+def reserve_ai_request(user_id, request_id, request_hash, period_start, period_end, monthly_limit, *, billable=True):
+    now = _now()
+    with connection() as db:
+        db.execute("BEGIN IMMEDIATE")
+        existing = db.execute(
+            "SELECT * FROM ai_requests WHERE user_id = ? AND request_id = ?",
+            (user_id, request_id),
+        ).fetchone()
+        used_row = db.execute(
+            "SELECT used FROM account_usage WHERE user_id = ? AND meter = 'ai_requests' AND period_start = ?",
+            (user_id, period_start),
+        ).fetchone()
+        used = used_row["used"] if used_row else 0
+        if existing:
+            existing = dict(existing)
+            if existing["request_hash"] != request_hash:
+                return {"state": "conflict", "used": used, "limit": monthly_limit, "period_end": period_end}
+            if existing["state"] == "completed":
+                return {
+                    "state": "completed", "used": used, "limit": monthly_limit,
+                    "period_end": period_end,
+                    "response": json.loads(existing["response_json"]),
+                    "response_status": existing["response_status"] or 200,
+                }
+            if existing["state"] == "reserved":
+                return {"state": "in_progress", "used": used, "limit": monthly_limit, "period_end": period_end}
+        if billable and monthly_limit is not None and used >= monthly_limit:
+            return {"state": "limit", "used": used, "limit": monthly_limit, "period_end": period_end}
+        if billable:
+            db.execute(
+                "INSERT INTO account_usage (user_id, meter, period_start, used, updated_at) "
+                "VALUES (?, 'ai_requests', ?, 1, ?) "
+                "ON CONFLICT(user_id, meter, period_start) DO UPDATE SET used = used + 1, updated_at = excluded.updated_at",
+                (user_id, period_start, now),
+            )
+        db.execute(
+            """
+            INSERT INTO ai_requests (user_id, request_id, period_start, request_hash, state, response_json,
+                response_status, billable, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'reserved', NULL, NULL, ?, ?, ?)
+            ON CONFLICT(user_id, request_id) DO UPDATE SET period_start = excluded.period_start,
+                request_hash = excluded.request_hash, state = 'reserved', response_json = NULL,
+                response_status = NULL, billable = excluded.billable, updated_at = excluded.updated_at
+            """,
+            (user_id, request_id, period_start, request_hash, int(billable), now, now),
+        )
+        return {"state": "reserved", "used": used + int(billable), "limit": monthly_limit, "period_end": period_end}
+
+
+def complete_ai_request(user_id, request_id, response, response_status=200):
+    now = _now()
+    with connection() as db:
+        db.execute(
+            "UPDATE ai_requests SET state = 'completed', response_json = ?, response_status = ?, updated_at = ? "
+            "WHERE user_id = ? AND request_id = ? AND state = 'reserved'",
+            (json.dumps(response, ensure_ascii=False), response_status, now, user_id, request_id),
+        )
+
+
+def release_ai_request(user_id, request_id):
+    now = _now()
+    with connection() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute(
+            "SELECT period_start, state, billable FROM ai_requests WHERE user_id = ? AND request_id = ?",
+            (user_id, request_id),
+        ).fetchone()
+        if row is None or row["state"] != "reserved":
+            return
+        if row["billable"]:
+            db.execute(
+                "UPDATE account_usage SET used = MAX(0, used - 1), updated_at = ? "
+                "WHERE user_id = ? AND meter = 'ai_requests' AND period_start = ?",
+                (now, user_id, row["period_start"]),
+            )
+        db.execute(
+            "UPDATE ai_requests SET state = 'failed', updated_at = ? WHERE user_id = ? AND request_id = ?",
+            (now, user_id, request_id),
+        )
+
+
+def apply_verified_subscription_event(*, provider, event_id, user_id, event_type, subscription_id=None,
+                                      period_start=None, period_end=None):
+    now = _now()
+    if event_type not in {"activated", "renewed", "canceled", "expired", "payment_failed"}:
+        raise ValueError("Unsupported subscription event.")
+    with connection() as db:
+        db.execute("BEGIN IMMEDIATE")
+        cursor = db.execute(
+            "INSERT OR IGNORE INTO processed_subscription_events (provider, event_id, processed_at) VALUES (?, ?, ?)",
+            (provider, event_id, now),
+        )
+        if cursor.rowcount == 0:
+            return False
+        if event_type in {"activated", "renewed"}:
+            plan, status = "pro", "active"
+        elif event_type == "canceled" and _timestamp_after(period_end, now):
+            plan, status = "pro", "canceled"
+        elif event_type == "payment_failed":
+            plan, status = "free", "past_due"
+        else:
+            plan, status = "free", "expired"
+        db.execute(
+            """
+            INSERT INTO account_subscriptions (user_id, plan, status, provider, provider_subscription_id,
+                period_start, period_end, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET plan = excluded.plan, status = excluded.status,
+                provider = excluded.provider, provider_subscription_id = excluded.provider_subscription_id,
+                period_start = excluded.period_start, period_end = excluded.period_end, updated_at = excluded.updated_at
+            """,
+            (user_id, plan, status, provider, subscription_id if plan == "pro" else None,
+             period_start if plan == "pro" else None, period_end if plan == "pro" else None, now),
+        )
+    return True
 
 
 def forget_memory(user_id, person, object_name):
