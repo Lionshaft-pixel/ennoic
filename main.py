@@ -22,6 +22,21 @@ CONTEXTUAL_FOLLOWUP_PATTERN = re.compile(
     r"change the second example\b|can you fix (?:that|this|it) code\b)",
     re.IGNORECASE,
 )
+MEMORY_INTENT_PATTERN = re.compile(
+    r"\b(?:remember|forget|memories?|save|store|memorize|note down|make a note|"
+    r"keep in mind|don't forget|do not forget)\b|"
+    r"\bwhat (?:did|have) i (?:tell|told) you\b|\bwhat do you remember\b|"
+    r"\b(?:who|what|when|where) is my\b|\bmy (?:saved )?(?:memory|memories|notes)\b|"
+    r"\bwho has\b",
+    re.IGNORECASE,
+)
+DIRECT_CHAT_PATTERN = re.compile(
+    r"^\s*(?:hi|hello|hey|good morning|good afternoon|good evening|"
+    r"who|what|when|where|why|how|can you|could you|would you|"
+    r"tell me|explain|write|draft|summari[sz]e|translate|give me|help me|"
+    r"let's talk|let us talk)\b",
+    re.IGNORECASE,
+)
 
 
 def normalize_conversation_history(history, current_message):
@@ -112,6 +127,24 @@ def is_contextual_followup(message, history):
     return bool(CONTEXTUAL_FOLLOWUP_PATTERN.match(message.strip()))
 
 
+def is_direct_chat(message, memories):
+    """Skip the memory classifier for clear chat requests with no memory cues."""
+    if MEMORY_INTENT_PATTERN.search(message):
+        return False
+
+    lowered = message.casefold()
+    for memory in memories:
+        for field in ("person", "object"):
+            value = memory.get(field)
+            if not isinstance(value, str) or len(value.strip()) < 3:
+                continue
+            phrase = re.escape(value.strip().casefold())
+            if re.search(rf"(?<!\w){phrase}(?!\w)", lowered):
+                return False
+
+    return "?" in message or bool(DIRECT_CHAT_PATTERN.match(message))
+
+
 def process_message_with_metadata(message, history=None, conversation_id=None, *, user_id=None, max_memories=None):
     print("Thinking...")
     conversation_history = normalize_conversation_history(history, message)
@@ -128,25 +161,25 @@ def process_message_with_metadata(message, history=None, conversation_id=None, *
 
     model_mode = "cloud"
 
-    prompt = ""
-    try:
-        with open("prompt.txt", "r", encoding="utf-8") as file:
-            prompt = file.read()
-    except FileNotFoundError as e:
-        raise RuntimeError("Prompt file 'prompt.txt' was not found") from e
-
-    prompt = prompt.replace("{{MEMORIES}}", str(memories))
-    prompt = prompt.replace("{{MESSAGE}}", message)
-
-    if is_contextual_followup(message, conversation_history):
+    if is_contextual_followup(message, conversation_history) or is_direct_chat(message, memories):
         # Bare referential follow-ups are often misclassified without their context.
         # They cannot trigger a persistent-memory action, so send them straight to chat.
         ai_data = {"action": "chat", "intent": "", "person": "", "object": "", "time": ""}
     else:
+        prompt = ""
+        try:
+            with open("prompt.txt", "r", encoding="utf-8") as file:
+                prompt = file.read()
+        except FileNotFoundError as e:
+            raise RuntimeError("Prompt file 'prompt.txt' was not found") from e
+
+        prompt = prompt.replace("{{MEMORIES}}", str(memories))
+        prompt = prompt.replace("{{MESSAGE}}", message)
+
         if model_mode == "local":
             ai_response = ask_model(prompt, "qwen2.5:1.5b")
         elif model_mode == "cloud":
-            ai_response = ask_cloud_model(prompt)
+            ai_response = ask_cloud_model(prompt, max_completion_tokens=1024)
 
         ai_response = ai_response.strip().removeprefix("```json").removesuffix("```").strip()
 

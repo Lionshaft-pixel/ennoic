@@ -65,6 +65,9 @@ def ask_cloud_model(
         "model": "openai/gpt-oss-120b",
         "messages": messages,
         "temperature": 0,
+        # The default medium effort can spend a long time reasoning before
+        # returning even simple chat and classification results.
+        "reasoning_effort": "low",
     }
     if max_completion_tokens is not None:
         payload["max_completion_tokens"] = max_completion_tokens
