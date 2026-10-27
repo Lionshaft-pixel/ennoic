@@ -152,7 +152,9 @@ def _start_account_deletion_worker():
 def add_security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
-    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    # Flask-WTF checks the same-origin Referer on HTTPS state-changing requests.
+    # Keep it within this origin only; never send it to external sites.
+    response.headers.setdefault("Referrer-Policy", "same-origin")
     bundle_nonce = (
         getattr(g, "landing_csp_nonce", None)
         or getattr(g, "auth_csp_nonce", None)
