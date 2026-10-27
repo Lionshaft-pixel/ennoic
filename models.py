@@ -1,10 +1,6 @@
 import requests
 import os
-import logging
 import time
-
-
-logger = logging.getLogger(__name__)
 
 ASSISTANT_SYSTEM_PROMPT = """You are Ennoic Mind, a helpful assistant. Keep normal conversation natural.
 
@@ -92,11 +88,11 @@ def ask_cloud_model(
         status_code = response.status_code
         response.raise_for_status()
     finally:
-        logger.info(
-            "groq_request_complete model=%s elapsed_ms=%d status=%s",
-            payload["model"],
-            round((time.perf_counter() - started_at) * 1000),
-            status_code,
+        print(
+            f"groq_request_complete model={payload['model']} "
+            f"elapsed_ms={round((time.perf_counter() - started_at) * 1000)} "
+            f"status={status_code}",
+            flush=True,
         )
 
     try:

@@ -1303,9 +1303,9 @@ def chat():
             assistant_message,
         )
         account_store.complete_ai_request(current_user.id, request_id, result)
-        app.logger.info(
-            "chat_request_complete elapsed_ms=%d status=200",
-            round((time.perf_counter() - request_started_at) * 1000),
+        print(
+            f"chat_request_complete elapsed_ms={round((time.perf_counter() - request_started_at) * 1000)} status=200",
+            flush=True,
         )
         return jsonify(result)
     except account_store.MemoryCapacityReached as exc:
@@ -1317,17 +1317,18 @@ def chat():
             "upgrade_url": url_for("pricing_page"),
         }
         account_store.complete_ai_request(current_user.id, request_id, response, response_status=403)
-        app.logger.info(
-            "chat_request_complete elapsed_ms=%d status=403",
-            round((time.perf_counter() - request_started_at) * 1000),
+        print(
+            f"chat_request_complete elapsed_ms={round((time.perf_counter() - request_started_at) * 1000)} status=403",
+            flush=True,
         )
         return jsonify(response), 403
     except Exception:
         account_store.release_ai_request(current_user.id, request_id)
-        app.logger.exception(
-            "chat_request_failed elapsed_ms=%d",
-            round((time.perf_counter() - request_started_at) * 1000),
+        print(
+            f"chat_request_failed elapsed_ms={round((time.perf_counter() - request_started_at) * 1000)}",
+            flush=True,
         )
+        app.logger.exception("Failed to process chat message")
         return jsonify({"error": "Ennoic couldn't process that message."}), 500
 
 
