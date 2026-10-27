@@ -120,6 +120,8 @@ def unauthorized():
 
 @app.before_request
 def initialize_database():
+    if request.path == "/healthz":
+        return
     path = account_store.database_key()
     with _database_initialization_lock:
         if path not in _initialized_databases:
@@ -127,6 +129,11 @@ def initialize_database():
             _initialized_databases.add(path)
     if not app.testing:
         _start_account_deletion_worker()
+
+
+@app.route("/healthz")
+def health_check():
+    return jsonify({"status": "ok"})
 
 
 def _run_account_deletion_worker():
