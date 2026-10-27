@@ -851,7 +851,8 @@ def reserve_ai_request(user_id, request_id, request_hash, period_start, period_e
             db.execute(
                 "INSERT INTO account_usage (user_id, meter, period_start, used, updated_at) "
                 "VALUES (?, 'ai_requests', ?, 1, ?) "
-                "ON CONFLICT(user_id, meter, period_start) DO UPDATE SET used = used + 1, updated_at = excluded.updated_at",
+                "ON CONFLICT(user_id, meter, period_start) DO UPDATE SET "
+                "used = account_usage.used + 1, updated_at = excluded.updated_at",
                 (user_id, period_start, now),
             )
         db.execute(
