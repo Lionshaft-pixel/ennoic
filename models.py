@@ -62,7 +62,7 @@ def ask_cloud_model(
     messages.append({"role": "user", "content": prompt})
 
     payload = {
-        "model": "openai/gpt-oss-120b",
+        "model": os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b"),
         "messages": messages,
         "temperature": 0,
         # The default medium effort can spend a long time reasoning before
