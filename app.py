@@ -186,7 +186,15 @@ def add_security_headers(response):
 @app.errorhandler(CSRFError)
 def handle_csrf_error(error):
     if request.path.startswith("/api/"):
-        return jsonify({"error": "Your session security token expired. Reload and try again."}), 400
+        app.logger.warning(
+            "csrf_validation_failed path=%s reason=%s",
+            request.path,
+            error.description,
+        )
+        return jsonify({
+            "error": "Your session security token expired. Reload and try again.",
+            "code": "csrf_expired",
+        }), 400
     return _auth_template(auth_error="Your session expired. Please try again."), 400
 
 

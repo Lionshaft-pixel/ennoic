@@ -646,7 +646,7 @@ function duplicateConfirmationEl(conversation, confirmation) {
 }
 
 /* ---------- Tasks ---------- */
-async function requestJSON(url, options = {}) {
+async function requestJSON(url, options = {}, csrfRetried = false) {
   const headers = new Headers(options.headers || {});
   if (options.method && options.method.toUpperCase() !== "GET") {
     headers.set("X-CSRFToken", document.querySelector('meta[name="csrf-token"]').content);
@@ -657,6 +657,24 @@ async function requestJSON(url, options = {}) {
     data = await response.json();
   } catch {
     throw new Error(t("unreadableResponse"));
+  }
+  if (!response.ok && response.status === 400 && data.code === "csrf_expired" && !csrfRetried) {
+    const refreshResponse = await fetch("/api/csrf");
+    if (refreshResponse.status === 401) {
+      window.location.assign("/");
+      throw new Error("Your session has expired. Please sign in again.");
+    }
+    let refreshed;
+    try {
+      refreshed = await refreshResponse.json();
+    } catch {
+      throw new Error(t("unreadableResponse"));
+    }
+    if (!refreshResponse.ok || typeof refreshed.csrf_token !== "string") {
+      throw new Error(typeof refreshed.error === "string" ? refreshed.error : `The server returned status ${refreshResponse.status}.`);
+    }
+    document.querySelector('meta[name="csrf-token"]').content = refreshed.csrf_token;
+    return requestJSON(url, options, true);
   }
   if (!response.ok) {
     if (response.status === 401) window.location.assign("/");
