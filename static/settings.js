@@ -69,7 +69,7 @@
         ? ""
         : new Intl.DateTimeFormat(language, { dateStyle: "medium" }).format(resetDate);
       $("account-ai-reset").textContent = resetLabel ? t("usageResetsAt", { date: resetLabel }) : "";
-      $("account-upgrade-prompt").hidden = data.plan !== "free" || percent < 100;
+      $("account-upgrade-prompt").hidden = data.plan !== "free";
     } catch (error) {
       status.textContent = error.message || t("planLoadFailed");
     }

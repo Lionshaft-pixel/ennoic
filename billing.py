@@ -195,6 +195,18 @@ class SubscriptionService:
             return RazorpaySubscriptionProvider()
         return None
 
+    def is_configured(self, currency):
+        if currency not in {"INR", "USD"}:
+            return False
+        if self.provider is not None:
+            return True
+        return all((
+            os.environ.get("RAZORPAY_KEY_ID", "").strip(),
+            os.environ.get("RAZORPAY_KEY_SECRET", "").strip(),
+            os.environ.get("RAZORPAY_WEBHOOK_SECRET", "").strip(),
+            os.environ.get(f"RAZORPAY_PRO_PLAN_ID_{currency}", "").strip(),
+        ))
+
     def create_checkout_session(self, *, user_id, plan, currency="USD", return_url, contact):
         if plan != "pro":
             raise ValueError("Only the Pro plan can be checked out.")

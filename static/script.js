@@ -22,6 +22,7 @@ const els = {
   thread: $("thread"), stage: $("stage"), greeting: $("greeting"), empty: $("empty-state"), messages: $("messages"),
   form: $("composer"), input: $("composer-input"), send: $("send"),
   openSettings: $("open-settings"),
+  upgrade: $("app-upgrade"),
   taskFilters: $("task-filters"), taskSearch: $("task-search"), taskList: $("task-list"),
   taskStatus: $("task-status"), createTask: $("create-task"), taskEditor: $("task-editor"),
   taskEditorForm: $("task-editor-form"), taskEditorTitle: $("task-editor-title"),
@@ -1145,6 +1146,9 @@ function startNewChat() {
 els.newChat.addEventListener("click", startNewChat);
 els.search.addEventListener("input", renderHistory);
 els.openSettings.addEventListener("click", () => window.location.assign("/settings"));
+requestJSON("/api/entitlements")
+  .then((account) => { els.upgrade.hidden = account.plan !== "free"; })
+  .catch(() => {});
 
 /* ---------- Start ---------- */
 EnnoicI18n.applyTranslations(language);

@@ -109,7 +109,7 @@ li svg{flex:none;margin-top:2px}
   </main>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 var CHECK = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f6e73b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
 function fill(id, items) {
@@ -139,7 +139,9 @@ function render() {
   $('free-sub').textContent = copy.no_payment;
   $('pro-name').textContent = copy.pro;
   $('start-free').textContent = copy.start_free;
-  $('price-sub').textContent = copy.billed_monthly;
+  $('price-sub').textContent = pricing.checkout_available
+    ? copy.billed_monthly_available
+    : copy.billed_monthly;
   $('upgrade').textContent = copy.upgrade;
   fill('free-features', pricing.features.free);
   fill('pro-features', pricing.features.pro);
@@ -149,7 +151,7 @@ function render() {
   var selectedPrice = pricing.selected_price || pricing.prices[pricing.selected_currency || 'USD'];
   $('price-amount').textContent = selectedPrice.display;
   $('price-per').textContent = copy.per_month;
-  $('upgrade').disabled = false;
+  $('upgrade').disabled = !pricing.checkout_available;
 }
 
 function load() {
@@ -200,7 +202,7 @@ fetch('/api/entitlements', { credentials: 'same-origin' }).then(function (r) {
 }).catch(function () {});
 
 $('upgrade').onclick = function () {
-  window.location.assign('/checkout');
+  if (pricing && pricing.checkout_available) window.location.assign('/checkout');
 };
 
 load();

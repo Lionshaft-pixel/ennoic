@@ -180,6 +180,7 @@ def add_security_headers(response):
     bundle_nonce = (
         getattr(g, "landing_csp_nonce", None)
         or getattr(g, "auth_csp_nonce", None)
+        or getattr(g, "pricing_csp_nonce", None)
         or getattr(g, "checkout_csp_nonce", None)
     )
     if bundle_nonce:
@@ -547,9 +548,11 @@ def settings_page():
 
 @app.route("/pricing")
 def pricing_page():
+    g.pricing_csp_nonce = secrets.token_urlsafe(18)
     return render_template(
         "pricing.html",
         csrf_token=generate_csrf() if current_user.is_authenticated else "",
+        csp_nonce=g.pricing_csp_nonce,
     )
 
 
@@ -613,7 +616,10 @@ def admin_users():
 @app.route("/api/pricing")
 def pricing_data():
     language = entitlements.language_for(request.args.get("lang", "en").split("-")[0].lower())
-    return jsonify(entitlements.public_pricing(language, selected_currency=_price_currency()))
+    currency = _price_currency()
+    pricing = entitlements.public_pricing(language, selected_currency=currency)
+    pricing["checkout_available"] = billing.subscription_service.is_configured(currency)
+    return jsonify(pricing)
 
 
 @app.route("/api/entitlements")
