@@ -632,7 +632,18 @@ def count_conversations(user_id):
 
 
 def conversation_is_in_window(user_id, conversation_id, limit):
-    return any(item["id"] == conversation_id for item in list_conversations(user_id, limit=limit))
+    limit = max(0, int(limit))
+    with connection() as db:
+        row = db.execute(
+            "SELECT EXISTS ("
+            "SELECT 1 FROM ("
+            "SELECT id FROM conversations WHERE user_id = ? "
+            "ORDER BY pinned DESC, updated_at DESC, id DESC LIMIT ?"
+            ") AS recent WHERE recent.id = ?"
+            ") AS is_in_window",
+            (user_id, limit, conversation_id),
+        ).fetchone()
+    return bool(row["is_in_window"])
 
 
 def _conversation_from_row(row):

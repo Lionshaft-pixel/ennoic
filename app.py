@@ -1242,8 +1242,8 @@ def chat():
     if conversation is None:
         return jsonify({"error": "Conversation not found."}), 404
     step_started_at = time.perf_counter()
-    account_limits = entitlements.account_entitlements(current_user.id)
-    history_limit = account_limits["usage"]["conversations"]["limit"]
+    chat_limits = entitlements.chat_limits(current_user.id)
+    history_limit = chat_limits["conversation_history_limit"]
     if history_limit is not None and not account_store.conversation_is_in_window(
         current_user.id, conversation_id, history_limit
     ):
@@ -1266,7 +1266,7 @@ def chat():
     mark_trace("billing.classified", duration_ms=round((time.perf_counter() - step_started_at) * 1000))
     step_started_at = time.perf_counter()
     period_start, period_end = entitlements.current_period()
-    ai_limit = account_limits["usage"]["ai_requests"]["limit"]
+    ai_limit = chat_limits["ai_requests_monthly"]
     reservation = account_store.reserve_ai_request(
         current_user.id,
         request_id,
@@ -1304,7 +1304,7 @@ def chat():
             conversation["messages"],
             conversation_id,
             user_id=current_user.id,
-            max_memories=account_limits["usage"]["memories"]["limit"],
+            max_memories=chat_limits["memory_capacity"],
         )
         mark_trace("message.processing.complete", duration_ms=round((time.perf_counter() - step_started_at) * 1000))
         assistant_message = {

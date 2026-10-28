@@ -261,3 +261,22 @@ def account_entitlements(user_id):
         },
         "upgrade_url": "/pricing",
     }
+
+
+def chat_limits(user_id):
+    """Load only plan limits needed by a chat request, without usage counters."""
+    plans = plan_definitions()
+    subscription = account_store.get_account_subscription(user_id) or {
+        "plan": "free", "status": "free",
+    }
+    plan = subscription["plan"] if subscription["plan"] == "pro" and subscription["status"] in {"active", "canceled"} else "free"
+    limits = plans[plan]
+    configured_history_limit = limits["conversation_history_limit"]
+    return {
+        "plan": plan,
+        "ai_requests_monthly": limits["ai_requests_monthly"],
+        "memory_capacity": limits["memory_capacity"],
+        "conversation_history_limit": (
+            None if plan == "pro" and configured_history_limit == 0 else configured_history_limit
+        ),
+    }
