@@ -162,6 +162,7 @@ def _classify(message, history, user_id):
         additional_system_context=prompt,
         conversation_history=history,
         max_completion_tokens=2048,
+        purpose="task_classifier",
     )
     if not isinstance(response, str):
         raise ValueError("The task request could not be interpreted.")

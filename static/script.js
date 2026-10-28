@@ -1059,8 +1059,10 @@ async function getReply(convo) {
       task_confirmations: result.task_confirmations,
     });
     saveConversations();
-    await loadTasks();
     if (convo.id === activeId) renderThread();
+    // Render the answer immediately; refreshing the task sidebar is independent
+    // and shouldn't keep the user waiting after the chat API has replied.
+    void loadTasks();
   } catch (err) {
     pending.replaceWith(errorEl(convo, err));
   } finally {

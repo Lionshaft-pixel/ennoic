@@ -1,6 +1,7 @@
 import requests
 import os
 import time
+from latency_trace import mark_trace
 
 ASSISTANT_SYSTEM_PROMPT = """You are Ennoic Mind, a helpful assistant. Keep normal conversation natural.
 
@@ -41,6 +42,7 @@ def ask_cloud_model(
     conversation_history=None,
     max_completion_tokens=None,
     include_metadata=False,
+    purpose="unspecified",
 ):
     """Call Groq and optionally return the completion finish reason."""
     api_key = os.environ.get("GROQ_API_KEY")
@@ -75,6 +77,7 @@ def ask_cloud_model(
 
     started_at = time.perf_counter()
     status_code = "no_response"
+    mark_trace("groq.request.start", purpose=purpose, model=payload["model"])
     try:
         response = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
@@ -88,11 +91,12 @@ def ask_cloud_model(
         status_code = response.status_code
         response.raise_for_status()
     finally:
-        print(
-            f"groq_request_complete model={payload['model']} "
-            f"elapsed_ms={round((time.perf_counter() - started_at) * 1000)} "
-            f"status={status_code}",
-            flush=True,
+        mark_trace(
+            "groq.request.complete",
+            purpose=purpose,
+            model=payload["model"],
+            duration_ms=round((time.perf_counter() - started_at) * 1000),
+            status=status_code,
         )
 
     try:

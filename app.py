@@ -28,6 +28,7 @@ import entitlements
 import task_store
 from main import process_message_with_metadata
 from task_management import message_requires_ai, resolve_task_confirmation
+from latency_trace import begin_trace, end_trace, mark_trace
 
 
 app = Flask(__name__, instance_relative_config=True)
@@ -77,6 +78,14 @@ app.config.update(
     RATELIMIT_HEADERS_ENABLED=True,
     MAX_CONTENT_LENGTH=2 * 1024 * 1024,
 )
+
+
+@app.before_request
+def start_chat_latency_trace():
+    if request.path == "/api/chat":
+        begin_trace()
+
+
 csrf = CSRFProtect(app)
 login_manager = LoginManager(app)
 login_manager.session_protection = "strong"
@@ -123,11 +132,16 @@ def unauthorized():
 def initialize_database():
     if request.path == "/healthz":
         return
+    database_started_at = time.perf_counter()
     path = account_store.database_key()
     with _database_initialization_lock:
         if path not in _initialized_databases:
             account_store.initialize()
             _initialized_databases.add(path)
+    mark_trace(
+        "database.initialization",
+        duration_ms=round((time.perf_counter() - database_started_at) * 1000),
+    )
     if not app.testing:
         _start_account_deletion_worker()
 
@@ -190,6 +204,7 @@ def add_security_headers(response):
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     if response.mimetype == "text/html":
         response.headers.setdefault("Cache-Control", "no-store")
+    end_trace(response.status_code)
     return response
 
 
@@ -1213,7 +1228,7 @@ def confirm_task_duplicate():
 @app.route("/api/chat", methods=["POST"])
 @login_required
 def chat():
-    request_started_at = time.perf_counter()
+    mark_trace("chat.route.enter")
     data = _request_data() or {}
     message = data.get("message")
     if not isinstance(message, str) or not message.strip():
@@ -1221,9 +1236,12 @@ def chat():
     conversation_id = data.get("conversation_id")
     if not isinstance(conversation_id, str) or not conversation_id or len(conversation_id) > 200:
         return jsonify({"error": "A valid conversation ID is required."}), 400
+    step_started_at = time.perf_counter()
     conversation = account_store.get_conversation(current_user.id, conversation_id)
+    mark_trace("conversation.loaded", duration_ms=round((time.perf_counter() - step_started_at) * 1000))
     if conversation is None:
         return jsonify({"error": "Conversation not found."}), 404
+    step_started_at = time.perf_counter()
     account_limits = entitlements.account_entitlements(current_user.id)
     history_limit = account_limits["usage"]["conversations"]["limit"]
     if history_limit is not None and not account_store.conversation_is_in_window(
@@ -1235,6 +1253,7 @@ def chat():
             "upgrade_url": url_for("pricing_page"),
             "limit": history_limit,
         }), 403
+    mark_trace("entitlements.loaded", duration_ms=round((time.perf_counter() - step_started_at) * 1000))
 
     request_id = data.get("request_id") or request.headers.get("Idempotency-Key") or secrets.token_urlsafe(24)
     if not isinstance(request_id, str) or not (16 <= len(request_id) <= 100):
@@ -1242,7 +1261,10 @@ def chat():
     request_hash = hashlib.sha256(
         (conversation_id + "\0" + message.strip()).encode("utf-8")
     ).hexdigest()
+    step_started_at = time.perf_counter()
     billable = message_requires_ai(message.strip(), conversation_id, current_user.id)
+    mark_trace("billing.classified", duration_ms=round((time.perf_counter() - step_started_at) * 1000))
+    step_started_at = time.perf_counter()
     period_start, period_end = entitlements.current_period()
     ai_limit = account_limits["usage"]["ai_requests"]["limit"]
     reservation = account_store.reserve_ai_request(
@@ -1253,6 +1275,11 @@ def chat():
         period_end,
         ai_limit,
         billable=billable,
+    )
+    mark_trace(
+        "usage.reserved",
+        duration_ms=round((time.perf_counter() - step_started_at) * 1000),
+        state=reservation["state"],
     )
     if reservation["state"] == "limit":
         return jsonify({
@@ -1268,8 +1295,10 @@ def chat():
     if reservation["state"] == "in_progress":
         return jsonify({"error": "This message is still being processed. Try again in a moment.", "code": "request_in_progress"}), 409
     if reservation["state"] == "completed":
+        mark_trace("idempotency.cached_response")
         return jsonify(reservation["response"]), reservation["response_status"]
     try:
+        step_started_at = time.perf_counter()
         result = process_message_with_metadata(
             message.strip(),
             conversation["messages"],
@@ -1277,6 +1306,7 @@ def chat():
             user_id=current_user.id,
             max_memories=account_limits["usage"]["memories"]["limit"],
         )
+        mark_trace("message.processing.complete", duration_ms=round((time.perf_counter() - step_started_at) * 1000))
         assistant_message = {
             "role": "assistant",
             "text": result["reply"],
@@ -1295,6 +1325,7 @@ def chat():
                 conversation_id,
                 messages=conversation["messages"],
             )
+        step_started_at = time.perf_counter()
         account_store.append_conversation_turn(
             current_user.id,
             conversation_id,
@@ -1303,10 +1334,7 @@ def chat():
             assistant_message,
         )
         account_store.complete_ai_request(current_user.id, request_id, result)
-        print(
-            f"chat_request_complete elapsed_ms={round((time.perf_counter() - request_started_at) * 1000)} status=200",
-            flush=True,
-        )
+        mark_trace("conversation.persisted", duration_ms=round((time.perf_counter() - step_started_at) * 1000))
         return jsonify(result)
     except account_store.MemoryCapacityReached as exc:
         response = {
@@ -1317,17 +1345,10 @@ def chat():
             "upgrade_url": url_for("pricing_page"),
         }
         account_store.complete_ai_request(current_user.id, request_id, response, response_status=403)
-        print(
-            f"chat_request_complete elapsed_ms={round((time.perf_counter() - request_started_at) * 1000)} status=403",
-            flush=True,
-        )
         return jsonify(response), 403
     except Exception:
         account_store.release_ai_request(current_user.id, request_id)
-        print(
-            f"chat_request_failed elapsed_ms={round((time.perf_counter() - request_started_at) * 1000)}",
-            flush=True,
-        )
+        mark_trace("chat.failed")
         app.logger.exception("Failed to process chat message")
         return jsonify({"error": "Ennoic couldn't process that message."}), 500
 

@@ -1,8 +1,10 @@
 import json
 import re
+import time
 from models import ASSISTANT_SYSTEM_PROMPT, ask_model, ask_cloud_model
 from task_management import maybe_handle_task_message
 import account_store
+from latency_trace import mark_trace
 
 ASSISTANT_OUTPUT_TOKEN_LIMIT = 8192
 MAX_HISTORY_MESSAGES = 12
@@ -146,18 +148,30 @@ def is_direct_chat(message, memories):
 
 
 def process_message_with_metadata(message, history=None, conversation_id=None, *, user_id=None, max_memories=None):
-    print("Thinking...")
+    mark_trace("message.pipeline.start")
     conversation_history = normalize_conversation_history(history, message)
+    step_started_at = time.perf_counter()
     task_response = maybe_handle_task_message(
         message,
         conversation_history,
         conversation_id,
         user_id=user_id,
     )
+    mark_trace(
+        "task.handler.complete",
+        duration_ms=round((time.perf_counter() - step_started_at) * 1000),
+        handled=task_response is not None,
+    )
     if task_response is not None:
         return task_response
 
+    step_started_at = time.perf_counter()
     memories = account_store.list_memories(user_id)
+    mark_trace(
+        "memories.loaded",
+        duration_ms=round((time.perf_counter() - step_started_at) * 1000),
+        count=len(memories),
+    )
 
     model_mode = "cloud"
 
@@ -179,7 +193,11 @@ def process_message_with_metadata(message, history=None, conversation_id=None, *
         if model_mode == "local":
             ai_response = ask_model(prompt, "qwen2.5:1.5b")
         elif model_mode == "cloud":
-            ai_response = ask_cloud_model(prompt, max_completion_tokens=1024)
+            ai_response = ask_cloud_model(
+                prompt,
+                max_completion_tokens=1024,
+                purpose="memory_classifier",
+            )
 
         ai_response = ai_response.strip().removeprefix("```json").removesuffix("```").strip()
 
@@ -203,6 +221,7 @@ def process_message_with_metadata(message, history=None, conversation_id=None, *
             conversation_history=conversation_history,
             max_completion_tokens=ASSISTANT_OUTPUT_TOKEN_LIMIT,
             include_metadata=True,
+            purpose="chat_answer",
         )
         response = completion["content"]
         truncated = completion["finish_reason"] == "length"
@@ -247,6 +266,7 @@ def process_message_with_metadata(message, history=None, conversation_id=None, *
             system_prompt=ASSISTANT_SYSTEM_PROMPT,
             max_completion_tokens=ASSISTANT_OUTPUT_TOKEN_LIMIT,
             include_metadata=True,
+            purpose="memory_answer",
         )
         response = completion["content"]
         truncated = completion["finish_reason"] == "length"
@@ -267,6 +287,7 @@ def process_message_with_metadata(message, history=None, conversation_id=None, *
             system_prompt=ASSISTANT_SYSTEM_PROMPT,
             max_completion_tokens=ASSISTANT_OUTPUT_TOKEN_LIMIT,
             include_metadata=True,
+            purpose="fallback_answer",
         )
         response = completion["content"]
         truncated = completion["finish_reason"] == "length"
