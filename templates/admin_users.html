@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Ennoic Admin · Users</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root{color-scheme:dark;--bg:#080611;--panel:#120d1d;--line:rgba(191,170,235,.16);--text:#f4efff;--muted:#a89bbd;--accent:#b79afa}
+    *{box-sizing:border-box}body{margin:0;min-width:320px;background:radial-gradient(ellipse at 20% 0%,rgba(112,74,178,.18),transparent 42%),var(--bg);color:var(--text);font:14px/1.55 'Plus Jakarta Sans',system-ui,sans-serif}
+    a{color:inherit}.wrap{width:min(1500px,100% - 40px);margin:0 auto;padding:28px 0 56px}header{display:flex;align-items:center;justify-content:space-between;gap:16px}.brand{text-decoration:none;font-weight:700}.back{color:var(--muted);font-size:12px;text-decoration:none}.back:hover{color:var(--text)}
+    h1{margin:38px 0 6px;font:italic 400 clamp(40px,6vw,58px)/1 'Instrument Serif',Georgia,serif}.intro{margin:0;color:var(--muted)}.summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:26px 0}.stat,.table-wrap{border:1px solid var(--line);border-radius:16px;background:rgba(18,13,29,.88)}.stat{padding:17px 19px}.stat span{display:block;color:var(--muted);font-size:11px}.stat strong{display:block;margin-top:3px;font-size:23px;font-variant-numeric:tabular-nums}
+    .table-wrap{overflow:auto}.table-title{padding:17px 18px;border-bottom:1px solid var(--line);font-weight:600}.table-title span{margin-left:6px;color:var(--muted);font-size:12px;font-weight:400}table{width:100%;border-collapse:collapse;text-align:left;font-size:12px}th,td{padding:13px 14px;border-bottom:1px solid rgba(191,170,235,.1);vertical-align:top}th{color:#cbbbe8;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}td{color:#e8e0f4}tbody tr:last-child td{border-bottom:0}.email{min-width:190px;overflow-wrap:anywhere;font-weight:600}.muted{color:var(--muted)}.badge{display:inline-block;padding:3px 8px;border:1px solid var(--line);border-radius:99px;background:rgba(183,154,250,.08);white-space:nowrap}.badge.pro{color:#d1baff}.badge.free{color:#c4b8d4}.badge.deleted{color:#ffc0b8;border-color:rgba(255,120,105,.25);background:rgba(255,90,75,.08)}.contact{min-width:190px;overflow-wrap:anywhere}.empty{padding:28px;text-align:center;color:var(--muted)}
+    @media(max-width:700px){.wrap{width:min(100% - 24px,1500px);padding-top:18px}.summary{gap:8px}.stat{padding:13px}.stat strong{font-size:18px}.stat span{font-size:10px}h1{margin-top:29px}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <a class="brand" href="/">Ennoic</a>
+      <a class="back" href="/settings">Back to settings</a>
+    </header>
+    <h1>Users</h1>
+    <p class="intro">Account and subscription overview. Sign-in IP shows the most recent recorded sign-in.</p>
+    <section class="summary" aria-label="User totals">
+      <div class="stat"><span>Total users</span><strong>{{ user_count }}</strong></div>
+      <div class="stat"><span>Free plan</span><strong>{{ free_count }}</strong></div>
+      <div class="stat"><span>Pro plan</span><strong>{{ pro_count }}</strong></div>
+    </section>
+    <section class="table-wrap" aria-label="User accounts">
+      <div class="table-title">Accounts <span>{{ user_count }} total</span></div>
+      {% if users %}
+      <table>
+        <thead><tr><th>Account</th><th>Plan</th><th>Verified</th><th>Created</th><th>Last sign-in</th><th>Last sign-in IP</th><th>Checkout contact</th><th>Deletion</th></tr></thead>
+        <tbody>
+        {% for account in users %}
+          <tr>
+            <td class="email">{{ account.email }}<br><span class="muted">ID: {{ account.id }}</span></td>
+            <td><span class="badge {{ 'pro' if account.plan == 'pro' else 'free' }}">{{ account.plan|title }}</span><br><span class="muted">{{ account.subscription_status }}{% if account.provider %} · {{ account.provider }}{% endif %}</span></td>
+            <td>{{ 'Yes' if account.email_verified else 'No' }}</td>
+            <td>{{ account.created_at or '—' }}</td>
+            <td>{{ account.last_login_at or '—' }}</td>
+            <td>{{ account.last_login_ip or '—' }}</td>
+            <td class="contact">{% if account.contact_name or account.contact_email or account.contact_phone %}{{ account.contact_name or '' }}{% if account.contact_email %}<br>{{ account.contact_email }}{% endif %}{% if account.contact_phone %}<br>{{ account.contact_phone }}{% endif %}{% if account.contact_updated_at %}<br><span class="muted">Updated {{ account.contact_updated_at }}</span>{% endif %}{% else %}—{% endif %}</td>
+            <td>{% if account.deleted_at %}<span class="badge deleted">Scheduled</span><br><span class="muted">{{ account.purge_after or 'Purge date unavailable' }}</span>{% else %}—{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">No user accounts yet.</p>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>
