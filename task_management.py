@@ -180,32 +180,33 @@ def _classify(message, history, user_id):
 
 
 def maybe_handle_task_message(message, history, conversation_id=None, user_id=None):
-    pending_proposals = task_store.list_task_proposals(conversation_id, user_id=user_id)
     choice = _confirmation_choice(message)
-    if choice and pending_proposals:
-        if len(pending_proposals) > 1:
-            return {
-                "reply": "Please resolve each possible duplicate using its buttons below.",
-                "truncated": False,
-                "task_confirmations": pending_proposals,
-            }
-        proposal = pending_proposals[0]
-        candidate_id = None
-        if choice == "update_existing":
-            if not proposal["candidates"]:
+    if choice:
+        pending_proposals = task_store.list_task_proposals(conversation_id, user_id=user_id)
+        if pending_proposals:
+            if len(pending_proposals) > 1:
                 return {
-                    "reply": "The possible match is no longer available. Create a separate task or cancel using the buttons below.",
+                    "reply": "Please resolve each possible duplicate using its buttons below.",
                     "truncated": False,
-                    "task_confirmations": [proposal],
+                    "task_confirmations": pending_proposals,
                 }
-            if len(proposal["candidates"]) != 1:
-                return {
-                    "reply": "Please choose which existing task to update using the button below.",
-                    "truncated": False,
-                    "task_confirmations": [proposal],
-                }
-            candidate_id = proposal["candidates"][0]["id"]
-        return resolve_task_confirmation(proposal["id"], choice, candidate_id, user_id=user_id)
+            proposal = pending_proposals[0]
+            candidate_id = None
+            if choice == "update_existing":
+                if not proposal["candidates"]:
+                    return {
+                        "reply": "The possible match is no longer available. Create a separate task or cancel using the buttons below.",
+                        "truncated": False,
+                        "task_confirmations": [proposal],
+                    }
+                if len(proposal["candidates"]) != 1:
+                    return {
+                        "reply": "Please choose which existing task to update using the button below.",
+                        "truncated": False,
+                        "task_confirmations": [proposal],
+                    }
+                candidate_id = proposal["candidates"][0]["id"]
+            return resolve_task_confirmation(proposal["id"], choice, candidate_id, user_id=user_id)
 
     if not _should_interpret_tasks(message):
         return None
