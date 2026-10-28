@@ -844,7 +844,29 @@ def reserve_ai_request(user_id, request_id, request_hash, period_start, period_e
                     "response_status": existing["response_status"] or 200,
                 }
             if existing["state"] == "reserved":
-                return {"state": "in_progress", "used": used, "limit": monthly_limit, "period_end": period_end}
+                try:
+                    updated_at = existing["updated_at"]
+                    if isinstance(updated_at, str):
+                        updated_at = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+                    if updated_at.tzinfo is None:
+                        updated_at = updated_at.replace(tzinfo=timezone.utc)
+                    stale = updated_at < datetime.now(timezone.utc) - timedelta(minutes=5)
+                except (TypeError, ValueError):
+                    stale = False
+                if not stale:
+                    return {"state": "in_progress", "used": used, "limit": monthly_limit, "period_end": period_end}
+                if existing["billable"]:
+                    db.execute(
+                        "UPDATE account_usage SET used = CASE WHEN used > 0 THEN used - 1 ELSE 0 END, updated_at = ? "
+                        "WHERE user_id = ? AND meter = 'ai_requests' AND period_start = ?",
+                        (now, user_id, existing["period_start"]),
+                    )
+                    if existing["period_start"] == period_start:
+                        used = max(0, used - 1)
+                db.execute(
+                    "UPDATE ai_requests SET state = 'failed', updated_at = ? WHERE user_id = ? AND request_id = ?",
+                    (now, user_id, request_id),
+                )
         if billable and monthly_limit is not None and used >= monthly_limit:
             return {"state": "limit", "used": used, "limit": monthly_limit, "period_end": period_end}
         if billable:
@@ -891,7 +913,7 @@ def release_ai_request(user_id, request_id):
             return
         if row["billable"]:
             db.execute(
-                "UPDATE account_usage SET used = MAX(0, used - 1), updated_at = ? "
+                "UPDATE account_usage SET used = CASE WHEN used > 0 THEN used - 1 ELSE 0 END, updated_at = ? "
                 "WHERE user_id = ? AND meter = 'ai_requests' AND period_start = ?",
                 (now, user_id, row["period_start"]),
             )

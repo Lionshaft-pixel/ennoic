@@ -1,6 +1,6 @@
 import json
 import re
-import time
+import time as perf_clock
 from models import ASSISTANT_SYSTEM_PROMPT, ask_model, ask_cloud_model
 from task_management import maybe_handle_task_message
 import account_store
@@ -150,7 +150,7 @@ def is_direct_chat(message, memories):
 def process_message_with_metadata(message, history=None, conversation_id=None, *, user_id=None, max_memories=None):
     mark_trace("message.pipeline.start")
     conversation_history = normalize_conversation_history(history, message)
-    step_started_at = time.perf_counter()
+    step_started_at = perf_clock.perf_counter()
     task_response = maybe_handle_task_message(
         message,
         conversation_history,
@@ -159,17 +159,17 @@ def process_message_with_metadata(message, history=None, conversation_id=None, *
     )
     mark_trace(
         "task.handler.complete",
-        duration_ms=round((time.perf_counter() - step_started_at) * 1000),
+        duration_ms=round((perf_clock.perf_counter() - step_started_at) * 1000),
         handled=task_response is not None,
     )
     if task_response is not None:
         return task_response
 
-    step_started_at = time.perf_counter()
+    step_started_at = perf_clock.perf_counter()
     memories = account_store.list_memories(user_id)
     mark_trace(
         "memories.loaded",
-        duration_ms=round((time.perf_counter() - step_started_at) * 1000),
+        duration_ms=round((perf_clock.perf_counter() - step_started_at) * 1000),
         count=len(memories),
     )
 

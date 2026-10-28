@@ -5,8 +5,11 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
+import time
 from contextlib import contextmanager
 from pathlib import Path
+from threading import Lock
+from latency_trace import mark_trace
 
 
 try:
@@ -16,18 +19,26 @@ except ImportError:  # Local SQLite development does not require psycopg.
     psycopg = None
     dict_row = None
 
+try:
+    from psycopg_pool import ConnectionPool
+except ImportError:  # SQLite development does not need the PostgreSQL pool.
+    ConnectionPool = None
+
 
 INTEGRITY_ERRORS = (sqlite3.IntegrityError,) + (
     (psycopg.IntegrityError,) if psycopg is not None else ()
 )
 DEFAULT_DATABASE_PATH = Path(__file__).resolve().with_name("tasks.sqlite3")
+_postgres_pool = None
+_postgres_pool_lock = Lock()
 
 
 class PostgresConnection:
     """Adapt the small portion of sqlite3's API used by the data stores."""
 
-    def __init__(self, connection):
+    def __init__(self, connection, pool=None):
         self._connection = connection
+        self._pool = pool
 
     def execute(self, statement, parameters=()):
         pragma = re.fullmatch(r"\s*PRAGMA\s+(foreign_keys|busy_timeout)\s*(?:=\s*\d+)?\s*;?", statement, re.IGNORECASE)
@@ -68,6 +79,13 @@ class PostgresConnection:
         return self._connection.rollback()
 
     def close(self):
+        if self._pool is not None:
+            connection = self._connection
+            if connection is None:
+                return None
+            self._connection = None
+            self._pool.putconn(connection)
+            return None
         return self._connection.close()
 
 
@@ -84,16 +102,35 @@ def database_key():
 
 
 def connect():
+    started_at = time.perf_counter()
     if uses_postgres():
         if psycopg is None:
             raise RuntimeError("Install psycopg[binary] to connect to PostgreSQL.")
-        raw = psycopg.connect(
-            os.environ["DATABASE_URL"],
-            row_factory=dict_row,
-            prepare_threshold=None,
-            connect_timeout=10,
+        if ConnectionPool is None:
+            raise RuntimeError('Install "psycopg[pool]" to connect to PostgreSQL efficiently.')
+        global _postgres_pool
+        with _postgres_pool_lock:
+            if _postgres_pool is None:
+                _postgres_pool = ConnectionPool(
+                    os.environ["DATABASE_URL"],
+                    open=True,
+                    min_size=0,
+                    max_size=5,
+                    timeout=15,
+                    max_idle=60,
+                    kwargs={
+                        "row_factory": dict_row,
+                        "prepare_threshold": None,
+                        "connect_timeout": 10,
+                    },
+                )
+        raw = _postgres_pool.getconn(timeout=15)
+        mark_trace(
+            "database.connection.checkout",
+            duration_ms=round((time.perf_counter() - started_at) * 1000),
+            backend="postgres",
         )
-        return PostgresConnection(raw)
+        return PostgresConnection(raw, _postgres_pool)
 
     path = Path(os.environ.get("ENNOIC_TASK_DB", DEFAULT_DATABASE_PATH))
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -101,6 +138,11 @@ def connect():
     raw.row_factory = sqlite3.Row
     raw.execute("PRAGMA foreign_keys = ON")
     raw.execute("PRAGMA busy_timeout = 10000")
+    mark_trace(
+        "database.connection.checkout",
+        duration_ms=round((time.perf_counter() - started_at) * 1000),
+        backend="sqlite",
+    )
     return raw
 
 
