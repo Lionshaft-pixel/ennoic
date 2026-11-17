@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import os
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -186,6 +187,68 @@ def initialize():
                 PRIMARY KEY (provider, event_id)
             )
             """
+        )
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS paddle_checkout_intents (
+                token_hash TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                environment TEXT NOT NULL CHECK (environment IN ('sandbox', 'production')),
+                price_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                transaction_id TEXT,
+                paddle_customer_id TEXT,
+                paddle_subscription_id TEXT
+            )
+            """
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS paddle_checkout_intents_user "
+            "ON paddle_checkout_intents(user_id, created_at DESC)"
+        )
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS paddle_subscriptions (
+                paddle_subscription_id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                paddle_customer_id TEXT NOT NULL,
+                environment TEXT NOT NULL CHECK (environment IN ('sandbox', 'production')),
+                status TEXT NOT NULL CHECK (status IN ('pending', 'active', 'past_due', 'paused', 'canceled', 'expired')),
+                price_id TEXT NOT NULL,
+                period_start TEXT,
+                period_end TEXT,
+                cancel_at TEXT,
+                last_event_at TEXT NOT NULL,
+                provider_updated_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS paddle_subscriptions_user "
+            "ON paddle_subscriptions(user_id, updated_at DESC)"
+        )
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS paddle_transactions (
+                paddle_transaction_id TEXT PRIMARY KEY,
+                user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+                paddle_customer_id TEXT,
+                paddle_subscription_id TEXT,
+                environment TEXT NOT NULL CHECK (environment IN ('sandbox', 'production')),
+                status TEXT NOT NULL,
+                price_id TEXT,
+                last_event_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS paddle_transactions_user "
+            "ON paddle_transactions(user_id, updated_at DESC)"
         )
         ai_request_columns = {
             row["name"] for row in db.execute("PRAGMA table_info(ai_requests)").fetchall()
@@ -968,6 +1031,263 @@ def apply_verified_subscription_event(*, provider, event_id, user_id, event_type
              period_start if plan == "pro" else None, period_end if plan == "pro" else None, now),
         )
     return True
+
+
+def create_paddle_checkout_intent(user_id, environment, price_id, *, lifetime_minutes=120):
+    if environment not in {"sandbox", "production"}:
+        raise ValueError("Unsupported Paddle environment.")
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode("ascii")).hexdigest()
+    now = datetime.now(timezone.utc)
+    with connection() as db:
+        db.execute(
+            "INSERT INTO paddle_checkout_intents "
+            "(token_hash, user_id, environment, price_id, created_at, expires_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (token_hash, user_id, environment, price_id, now.isoformat(),
+             (now + timedelta(minutes=lifetime_minutes)).isoformat()),
+        )
+    return token
+
+
+def _paddle_intent_by_token(db, token):
+    if not isinstance(token, str) or not token or len(token) > 200:
+        return None
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    intent = db.execute(
+        "SELECT * FROM paddle_checkout_intents WHERE token_hash = ?", (token_hash,)
+    ).fetchone()
+    if not intent or not _timestamp_after(intent["expires_at"], _now()):
+        return None
+    return intent
+
+
+def _paddle_event_is_newer(occurred_at, provider_updated_at, row):
+    def parse(value):
+        if not value:
+            return None
+        try:
+            result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return result.replace(tzinfo=timezone.utc) if result.tzinfo is None else result
+        except (AttributeError, TypeError, ValueError):
+            return None
+
+    event_time = parse(occurred_at)
+    stored_time = parse(row["last_event_at"])
+    if event_time is None or stored_time is None:
+        return False
+    if event_time > stored_time:
+        return True
+    if event_time < stored_time:
+        return False
+    new_updated = parse(provider_updated_at)
+    old_updated = parse(row["provider_updated_at"])
+    return bool(new_updated and (not old_updated or new_updated > old_updated))
+
+
+def record_paddle_transaction_event(*, event_id, event_type, occurred_at, transaction_id,
+                                    status, environment, customer_id=None, subscription_id=None,
+                                    price_id=None, checkout_token=None):
+    """Record signed Paddle transaction events without granting Pro access."""
+    now = _now()
+    with connection() as db:
+        db.execute("BEGIN IMMEDIATE")
+        inserted = db.execute(
+            "INSERT OR IGNORE INTO processed_subscription_events (provider, event_id, processed_at) "
+            "VALUES ('paddle', ?, ?)", (event_id, now),
+        )
+        if inserted.rowcount == 0:
+            return False
+
+        intent = _paddle_intent_by_token(db, checkout_token)
+        existing_subscription = None
+        if subscription_id:
+            existing_subscription = db.execute(
+                "SELECT user_id, paddle_customer_id, environment FROM paddle_subscriptions "
+                "WHERE paddle_subscription_id = ?", (subscription_id,),
+            ).fetchone()
+        user_id = intent["user_id"] if intent else (
+            existing_subscription["user_id"] if existing_subscription else None
+        )
+        if intent and existing_subscription and intent["user_id"] != existing_subscription["user_id"]:
+            raise ValueError("Paddle transaction account mapping does not match its subscription.")
+        if existing_subscription and (
+            existing_subscription["paddle_customer_id"] != customer_id
+            or existing_subscription["environment"] != environment
+        ):
+            raise ValueError("Paddle transaction customer or environment does not match its subscription.")
+        if intent and intent["environment"] != environment:
+            raise ValueError("Paddle transaction environment does not match its checkout intent.")
+        if intent and price_id and intent["price_id"] != price_id:
+            raise ValueError("Paddle transaction price does not match its checkout intent.")
+        if intent and subscription_id:
+            bound_id = intent["paddle_subscription_id"]
+            if bound_id and bound_id != subscription_id:
+                raise ValueError("Paddle checkout intent is already linked to another subscription.")
+            db.execute(
+                "UPDATE paddle_checkout_intents SET transaction_id = ?, paddle_customer_id = ?, "
+                "paddle_subscription_id = ? WHERE token_hash = ?",
+                (transaction_id, customer_id, subscription_id, intent["token_hash"]),
+            )
+
+        previous = db.execute(
+            "SELECT * FROM paddle_transactions WHERE paddle_transaction_id = ?", (transaction_id,)
+        ).fetchone()
+        if previous:
+            if previous["environment"] != environment:
+                raise ValueError("Paddle transaction environment changed unexpectedly.")
+            if previous["user_id"] and user_id and previous["user_id"] != user_id:
+                raise ValueError("Paddle transaction account mapping changed unexpectedly.")
+            if previous["paddle_customer_id"] and customer_id and previous["paddle_customer_id"] != customer_id:
+                raise ValueError("Paddle transaction customer changed unexpectedly.")
+            event_time = datetime.fromisoformat(occurred_at.replace("Z", "+00:00"))
+            previous_time = datetime.fromisoformat(previous["last_event_at"].replace("Z", "+00:00"))
+            if event_time <= previous_time:
+                return False
+            updated = db.execute(
+                "UPDATE paddle_transactions SET user_id = COALESCE(user_id, ?), "
+                "paddle_customer_id = COALESCE(?, paddle_customer_id), "
+                "paddle_subscription_id = COALESCE(?, paddle_subscription_id), status = ?, "
+                "price_id = COALESCE(?, price_id), last_event_at = ?, updated_at = ? "
+                "WHERE paddle_transaction_id = ? AND last_event_at < ?",
+                (user_id, customer_id, subscription_id, status, price_id, occurred_at, now,
+                 transaction_id, occurred_at),
+            )
+            if updated.rowcount == 0:
+                return False
+        else:
+            db.execute(
+                "INSERT INTO paddle_transactions (paddle_transaction_id, user_id, paddle_customer_id, "
+                "paddle_subscription_id, environment, status, price_id, last_event_at, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (transaction_id, user_id, customer_id, subscription_id, environment, status, price_id,
+                 occurred_at, now, now),
+            )
+    return True
+
+
+def apply_paddle_subscription_event(*, event_id, occurred_at, provider_updated_at, environment,
+                                    subscription_id, customer_id, status, price_id, period_start=None,
+                                    period_end=None, cancel_at=None, checkout_token=None):
+    """Atomically deduplicate, order, and persist a signed Paddle subscription snapshot."""
+    if environment not in {"sandbox", "production"}:
+        raise ValueError("Unsupported Paddle environment.")
+    if status not in {"pending", "active", "past_due", "paused", "canceled", "expired"}:
+        raise ValueError("Unsupported Paddle subscription status.")
+    now = _now()
+    with connection() as db:
+        db.execute("BEGIN IMMEDIATE")
+        inserted = db.execute(
+            "INSERT OR IGNORE INTO processed_subscription_events (provider, event_id, processed_at) "
+            "VALUES ('paddle', ?, ?)", (event_id, now),
+        )
+        if inserted.rowcount == 0:
+            return False
+
+        existing = db.execute(
+            "SELECT * FROM paddle_subscriptions WHERE paddle_subscription_id = ?", (subscription_id,)
+        ).fetchone()
+        intent = _paddle_intent_by_token(db, checkout_token)
+        if intent and intent["environment"] != environment:
+            raise ValueError("Paddle subscription environment does not match its checkout intent.")
+        if intent and price_id != intent["price_id"]:
+            raise ValueError("Paddle subscription price does not match its checkout intent.")
+        if existing and intent and existing["user_id"] != intent["user_id"]:
+            raise ValueError("Paddle subscription account mapping does not match its checkout intent.")
+        if existing and existing["paddle_customer_id"] != customer_id:
+            raise ValueError("Paddle customer does not match the stored subscription owner.")
+        if existing and existing["environment"] != environment:
+            raise ValueError("Paddle environment does not match the stored subscription.")
+        if intent:
+            bound_id = intent["paddle_subscription_id"]
+            if bound_id and bound_id != subscription_id:
+                raise ValueError("Paddle checkout intent is already linked to another subscription.")
+            db.execute(
+                "UPDATE paddle_checkout_intents SET paddle_customer_id = ?, paddle_subscription_id = ? "
+                "WHERE token_hash = ?",
+                (customer_id, subscription_id, intent["token_hash"]),
+            )
+        elif existing is None:
+            # A new subscription must be tied to an authenticated checkout intent.
+            return False
+
+        if existing:
+            if not _paddle_event_is_newer(occurred_at, provider_updated_at, existing):
+                return False
+            event_time = datetime.fromisoformat(occurred_at.replace("Z", "+00:00"))
+            stored_time = datetime.fromisoformat(existing["last_event_at"].replace("Z", "+00:00"))
+            if event_time > stored_time:
+                order_guard = "last_event_at < ?"
+                order_parameters = (occurred_at,)
+            else:
+                order_guard = (
+                    "last_event_at = ? AND (provider_updated_at IS NULL OR provider_updated_at < ?)"
+                )
+                order_parameters = (occurred_at, provider_updated_at)
+
+        user_id = intent["user_id"] if intent else existing["user_id"]
+        if existing and status == "canceled":
+            # Paddle omits current_billing_period after cancellation. Keep the last
+            # known period end so scheduled cancellations retain access until effective.
+            period_start = period_start or existing["period_start"]
+            period_end = period_end or existing["period_end"] or cancel_at
+            cancel_at = cancel_at or existing["cancel_at"]
+        if status == "active" and cancel_at and not period_end:
+            period_end = cancel_at
+        if existing:
+            updated = db.execute(
+                "UPDATE paddle_subscriptions SET user_id = ?, paddle_customer_id = ?, environment = ?, "
+                "status = ?, price_id = ?, period_start = ?, period_end = ?, cancel_at = ?, "
+                "last_event_at = ?, provider_updated_at = ?, updated_at = ? "
+                "WHERE paddle_subscription_id = ? AND " + order_guard,
+                (user_id, customer_id, environment, status, price_id, period_start, period_end, cancel_at,
+                 occurred_at, provider_updated_at, now, subscription_id, *order_parameters),
+            )
+            if updated.rowcount == 0:
+                return False
+        else:
+            db.execute(
+                "INSERT INTO paddle_subscriptions (paddle_subscription_id, user_id, paddle_customer_id, "
+                "environment, status, price_id, period_start, period_end, cancel_at, last_event_at, "
+                "provider_updated_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (subscription_id, user_id, customer_id, environment, status, price_id, period_start,
+                 period_end, cancel_at, occurred_at, provider_updated_at, now, now),
+            )
+    return True
+
+
+def get_paddle_subscription(user_id, environment, *, now=None):
+    now = now or _now()
+    with connection() as db:
+        rows = db.execute(
+            "SELECT * FROM paddle_subscriptions WHERE user_id = ? AND environment = ? "
+            "ORDER BY updated_at DESC", (user_id, environment),
+        ).fetchall()
+    for raw in rows:
+        subscription = dict(raw)
+        effective_end = subscription.get("cancel_at") or subscription.get("period_end")
+        if (subscription["status"] in {"active", "past_due", "canceled"}
+                and _timestamp_after(effective_end, now)):
+            if subscription["cancel_at"]:
+                subscription["status"] = "canceled"
+            return subscription
+    if not rows:
+        return None
+    latest = dict(rows[0])
+    effective_end = latest.get("cancel_at") or latest.get("period_end")
+    if latest["status"] in {"active", "past_due", "canceled"} and not _timestamp_after(effective_end, now):
+        latest["status"] = "expired"
+    return latest
+
+
+def get_paddle_subscription_for_portal(user_id, environment):
+    with connection() as db:
+        row = db.execute(
+            "SELECT paddle_customer_id, paddle_subscription_id FROM paddle_subscriptions "
+            "WHERE user_id = ? AND environment = ? ORDER BY updated_at DESC LIMIT 1",
+            (user_id, environment),
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def forget_memory(user_id, person, object_name):

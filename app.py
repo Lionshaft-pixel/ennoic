@@ -25,6 +25,7 @@ from dotenv import load_dotenv
 import account_store
 import billing
 import entitlements
+import paddle_billing
 import task_store
 from main import process_message_with_metadata
 from task_management import message_requires_ai, resolve_task_confirmation
@@ -186,11 +187,11 @@ def add_security_headers(response):
     if bundle_nonce:
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            f"script-src 'self' 'nonce-{bundle_nonce}' 'strict-dynamic' 'unsafe-eval' blob: https://cdn.jsdelivr.net https://checkout.razorpay.com; "
+            f"script-src 'self' 'nonce-{bundle_nonce}' 'strict-dynamic' 'unsafe-eval' blob: https://cdn.jsdelivr.net https://checkout.razorpay.com https://cdn.paddle.com; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; "
-            "connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com https://api.razorpay.com https://checkout.razorpay.com; "
-            "frame-src https://api.razorpay.com https://checkout.razorpay.com; "
+            "connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com https://api.razorpay.com https://checkout.razorpay.com https://*.paddle.com https://*.paddle.net; "
+            "frame-src https://api.razorpay.com https://checkout.razorpay.com https://*.paddle.com https://*.paddle.net; "
             "object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
         )
     else:
@@ -552,6 +553,7 @@ def pricing_page():
     return render_template(
         "pricing.html",
         csrf_token=generate_csrf() if current_user.is_authenticated else "",
+        authenticated=current_user.is_authenticated,
         csp_nonce=g.pricing_csp_nonce,
     )
 
@@ -633,7 +635,14 @@ def pricing_data():
     language = entitlements.language_for(request.args.get("lang", "en").split("-")[0].lower())
     currency = _price_currency()
     pricing = entitlements.public_pricing(language, selected_currency=currency)
-    pricing["checkout_available"] = billing.subscription_service.is_configured(currency)
+    paddle_config = paddle_billing.checkout_configuration()
+    pricing["checkout_available"] = paddle_config["ready"]
+    pricing["checkout_message"] = paddle_config["message"]
+    pricing["paddle"] = {
+        "environment": paddle_config["environment"],
+        "client_token": paddle_config["client_token"],
+        "price_id": paddle_config["price_id"],
+    }
     return jsonify(pricing)
 
 
@@ -641,6 +650,60 @@ def pricing_data():
 @login_required
 def current_entitlements():
     return jsonify(entitlements.account_entitlements(current_user.id))
+
+
+@app.route("/api/paddle/checkout-intent", methods=["POST"])
+@login_required
+@limiter.limit("10 per hour")
+def create_paddle_checkout_intent():
+    config = paddle_billing.checkout_configuration()
+    if not config["ready"]:
+        return jsonify({"error": config["message"] or "Paddle checkout is not configured."}), 503
+    if entitlements.account_entitlements(current_user.id)["plan"] == "pro":
+        return jsonify({"error": "Your account already has an active Pro subscription."}), 409
+    token = account_store.create_paddle_checkout_intent(
+        current_user.id, config["environment"], config["price_id"]
+    )
+    return jsonify({"checkout_intent": token, "email": current_user.email}), 200
+
+
+@app.route("/checkout/success")
+def paddle_checkout_success():
+    return render_template("checkout_success.html")
+
+
+@app.route("/api/paddle/webhook", methods=["POST"])
+@csrf.exempt
+def paddle_webhook():
+    payload = request.get_data(cache=True)
+    signature = request.headers.get("Paddle-Signature")
+    try:
+        processed = paddle_billing.process_webhook(payload, signature)
+    except paddle_billing.PaddleUnavailable as exc:
+        app.logger.error("paddle_webhook_unavailable reason=%s", exc)
+        return jsonify({"error": "Paddle webhook processing is not configured."}), 503
+    except ValueError as exc:
+        app.logger.warning("paddle_webhook_rejected reason=%s", exc)
+        return jsonify({"error": "Invalid Paddle webhook."}), 400
+    return jsonify({"received": True, "processed": processed}), 200
+
+
+@app.route("/api/paddle/portal", methods=["POST"])
+@login_required
+@limiter.limit("10 per hour")
+def paddle_customer_portal():
+    stored = account_store.get_paddle_subscription_for_portal(
+        current_user.id, paddle_billing.environment() or ""
+    )
+    if not stored:
+        return jsonify({"error": "No Paddle subscription is linked to this account."}), 404
+    try:
+        portal_url = paddle_billing.PaddleAPI().create_portal_session(
+            stored["paddle_customer_id"], stored["paddle_subscription_id"]
+        )
+    except paddle_billing.PaddleUnavailable as exc:
+        return jsonify({"error": str(exc)}), 503
+    return jsonify({"url": portal_url}), 200
 
 
 @app.route("/api/checkout", methods=["POST"])

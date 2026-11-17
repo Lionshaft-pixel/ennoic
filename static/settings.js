@@ -57,6 +57,7 @@
       $("account-plan-name").textContent = t(data.plan === "pro" ? "planPro" : "planFree");
       status.textContent = t(data.status === "active" ? "subscriptionActive" : data.status === "canceled" ? "subscriptionCanceled" : "subscriptionFree");
       const quota = data.usage.ai_requests;
+      $("manage-paddle-subscription").hidden = data.provider !== "paddle";
       const percent = quota.limit > 0
         ? Math.min(100, (quota.used / quota.limit) * 100)
         : 100;
@@ -88,6 +89,19 @@
     if (data.csrf_token) document.querySelector('meta[name="csrf-token"]').content = data.csrf_token;
     return data;
   }
+
+  $("manage-paddle-subscription").addEventListener("click", async () => {
+    const button = $("manage-paddle-subscription");
+    button.disabled = true;
+    try {
+      const data = await postJSON("/api/paddle/portal", {});
+      window.location.assign(data.url);
+    } catch (error) {
+      $("account-feedback").textContent = error.message || t("accountSaveFailed");
+    } finally {
+      button.disabled = false;
+    }
+  });
 
   navItems.forEach((item) => item.addEventListener("click", () => selectSection(item.dataset.section)));
   $("settings-language").value = language;

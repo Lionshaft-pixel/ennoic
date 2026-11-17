@@ -4,6 +4,7 @@ import os
 from datetime import datetime, timezone
 
 import account_store
+import paddle_billing
 
 
 DEFAULT_PLAN_VALUES = {
@@ -215,10 +216,20 @@ def public_pricing(language="en", selected_currency="USD"):
 
 def account_entitlements(user_id):
     plans = plan_definitions()
-    subscription = account_store.get_account_subscription(user_id) or {
+    paddle_env = paddle_billing.environment()
+    paddle_subscription = (
+        account_store.get_paddle_subscription(user_id, paddle_env) if paddle_env else None
+    )
+    paddle_active = paddle_subscription and paddle_subscription["status"] in {"active", "past_due", "canceled"}
+    legacy_subscription = account_store.get_account_subscription(user_id) or {
         "plan": "free", "status": "free", "period_end": None, "provider": None,
     }
-    plan = subscription["plan"] if subscription["plan"] == "pro" and subscription["status"] in {"active", "canceled"} else "free"
+    subscription = paddle_subscription if paddle_active else legacy_subscription
+    legacy_active = (
+        legacy_subscription["plan"] == "pro"
+        and legacy_subscription["status"] in {"active", "canceled"}
+    )
+    plan = "pro" if paddle_active else ("pro" if legacy_active else "free")
     limits = plans[plan]
     period_start, period_end = current_period()
     ai_used = account_store.get_usage(user_id, "ai_requests", period_start)
@@ -230,7 +241,7 @@ def account_entitlements(user_id):
         "plan": plan,
         "status": subscription["status"],
         "period_end": subscription.get("period_end"),
-        "provider": subscription.get("provider"),
+        "provider": "paddle" if paddle_active else subscription.get("provider"),
         "usage_period": {"start": period_start, "resets_at": period_end},
         "usage": {
             "ai_requests": {"used": ai_used, "limit": limits["ai_requests_monthly"], "resets_at": period_end},
@@ -269,10 +280,19 @@ def account_entitlements(user_id):
 def chat_limits(user_id):
     """Load only plan limits needed by a chat request, without usage counters."""
     plans = plan_definitions()
-    subscription = account_store.get_account_subscription(user_id) or {
+    paddle_env = paddle_billing.environment()
+    paddle_subscription = (
+        account_store.get_paddle_subscription(user_id, paddle_env) if paddle_env else None
+    )
+    paddle_active = paddle_subscription and paddle_subscription["status"] in {"active", "past_due", "canceled"}
+    legacy_subscription = account_store.get_account_subscription(user_id) or {
         "plan": "free", "status": "free",
     }
-    plan = subscription["plan"] if subscription["plan"] == "pro" and subscription["status"] in {"active", "canceled"} else "free"
+    legacy_active = (
+        legacy_subscription["plan"] == "pro"
+        and legacy_subscription["status"] in {"active", "canceled"}
+    )
+    plan = "pro" if paddle_active else ("pro" if legacy_active else "free")
     limits = plans[plan]
     configured_history_limit = limits["conversation_history_limit"]
     return {
