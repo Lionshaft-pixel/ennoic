@@ -25,8 +25,8 @@ h1{margin:0;font-family:'Instrument Serif',Georgia,serif;font-size:clamp(48px,8v
 .legal-body li{padding:3px 0;font-size:14px}
 .legal-body strong{color:#f6efe9}
 .legal-body code{padding:2px 5px;border:1px solid rgba(255,255,255,.08);border-radius:5px;background:rgba(0,0,0,.24);color:#f8d2ad;font-size:.9em}
-.review-note{padding:15px 17px;border:1px solid rgba(246,163,94,.34);border-radius:12px;background:rgba(111,52,17,.17)}
-.review-note p{margin:0;color:#efddce;font-size:13px}
+.pending-policy{padding:15px 17px;border:1px solid rgba(246,163,94,.34);border-radius:12px;background:rgba(111,52,17,.17)}
+.pending-policy p{margin:0;color:#efddce;font-size:13px}
 .legal-contact{margin:32px 0 0;color:var(--legal-muted);font-size:13px}
 .legal-footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:20px;padding:22px clamp(20px,5vw,72px) 30px;border-top:1px solid rgba(255,255,255,.08);color:var(--legal-muted);font-size:12px}
 @media(max-width:600px){.legal-topbar{min-height:66px;padding-inline:18px}.legal-topbar nav{gap:13px}.legal-topbar nav a{font-size:12px}.legal-main{padding:48px 0 64px}.legal-summary{padding:18px}.legal-body{margin-top:32px}.legal-footer{align-items:flex-start;flex-direction:column}.legal-footer nav{gap:15px}}

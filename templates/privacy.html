@@ -1,61 +1,56 @@
 {% extends "legal_page.html" %}
 {% set page_title = "Privacy Policy" %}
 {% set page_label = "PRIVACY POLICY" %}
-{% set page_description = "Learn what information Ennoic stores, how it is used, and which service providers process it." %}
-{% set summary = "Ennoic stores your account details, tasks, conversations, and any memories you ask it to save. When you use AI features, your message and relevant conversation or memory context are sent to Groq for processing. We also use providers for sign-in, email, hosting/database, and payments when enabled. You can request account deletion in settings." %}
+{% set page_description = "Learn what information Ennoic collects, stores, and shares with service providers." %}
+{% set summary = "Ennoic stores account details, tasks, conversations, and memories you ask it to save. When you use AI features, your message and relevant context are sent to Groq. Google handles sign-in if you choose it. We use Render to host Ennoic and Neon PostgreSQL for production account data. You can request account deletion in settings." %}
 
 {% block legal_content %}
 <section>
-  <h2>1. Information Ennoic handles</h2>
+  <h2>1. Information Ennoic collects and stores</h2>
   <ul>
-    <li><strong>Account information:</strong> email address, password hash (not your plaintext password), email-verification status, account creation and password-change timestamps, and authentication version. Hashed one-time email-verification and password-reset tokens are stored while needed. Google sign-in supplies your verified email; Ennoic does not store a Google profile photo in the account record.</li>
-    <li><strong>Account and security activity:</strong> the most recent login time and IP address, and the IP address and request details recorded when an account deletion is requested. Temporary Google sign-in state is held in the session while that sign-in is completed. Standard hosting and application logs may also record request metadata such as IP address, route, time, and browser user agent.</li>
-    <li><strong>Content you enter or create:</strong> task titles and details, conversation titles and messages, pinned status, saved-memory fields (person, fact/object, and time), and task proposals generated during conversations.</li>
-    <li><strong>Usage and subscription records:</strong> AI-request counts, request identifiers and status, a hash derived from the request, and a cached response payload used for safe retries; plan and subscription status; provider subscription identifiers and billing-period dates; and processed payment-event identifiers. The database schema also supports checkout contact details (name, email, phone) if you choose to save them.</li>
-    <li><strong>Support messages:</strong> information you choose to include when emailing <a href="mailto:ennoic.app@gmail.com">ennoic.app@gmail.com</a>.</li>
+    <li><strong>Account and sign-in information:</strong> email address, password hash (not plaintext password), email-verification status, account creation and password-change dates, and sign-in/session state. Ennoic stores hashed one-time email-verification and password-reset tokens while they are needed.</li>
+    <li><strong>Google sign-in:</strong> if you choose Google, Google processes the authentication request and returns verified identity information. Ennoic uses your verified email address for the account; it does not receive your Google password.</li>
+    <li><strong>Security and service activity:</strong> the most recent account login time and IP address; an IP address and timestamps associated with an account deletion request; and request metadata in application and hosting logs, which may include IP address, URL, time, and browser user agent.</li>
+    <li><strong>Content:</strong> task titles and details, conversation titles and messages, pinned status, saved-memory details (person, fact or item, and time), and task proposals created during conversations.</li>
+    <li><strong>Usage, subscription, and checkout details:</strong> AI request counts, identifiers, status, request hashes, and cached response data used to safely handle retries; plan and subscription status, billing-period dates, provider subscription identifiers, and payment-event identifiers. If you choose to save checkout contact details, Ennoic stores your name, email, and phone number.</li>
+    <li><strong>Messages to support:</strong> information you include when contacting <a href="mailto:ennoic.app@gmail.com">ennoic.app@gmail.com</a>.</li>
   </ul>
-  <p>File attachments are not currently available in the application. The current plan configuration reserves attachment limits, but Ennoic does not currently provide an attachment-upload feature.</p>
+  <p>Ennoic does not currently offer file uploads or attachment processing.</p>
 </section>
 
 <section>
-  <h2>2. How AI processing works</h2>
-  <p>Ennoic uses Groq's API to classify some messages and generate AI responses. Depending on the request, Groq may receive the message you send, recent messages from that conversation, Ennoic instructions, and relevant saved-memory context. Ennoic sends this content to Groq for processing; Groq handles it under its own terms and privacy practices. Ennoic does not control Groq's independent retention or use practices, so review Groq's current <a href="https://groq.com/privacy-policy/" rel="noopener noreferrer">Privacy Policy</a> before submitting sensitive information.</p>
-  <p>Some task-management requests may be handled by Ennoic's application logic without an AI request. AI responses can be inaccurate; verify important information and review suggested actions.</p>
+  <h2>2. AI processing</h2>
+  <p>Ennoic uses Groq's API to classify some messages and produce AI answers. Depending on the request, Groq may receive the message you submit, relevant recent conversation messages, saved-memory context, and instructions needed to process the request. Groq processes that information under its own terms and privacy practices. Review <a href="https://groq.com/privacy-policy" rel="noopener noreferrer">Groq's Privacy Policy</a> before submitting information you consider sensitive.</p>
+  <p>Some task actions are handled by Ennoic's application logic without sending a request to an AI model. AI output may be inaccurate; check it before relying on it or confirming a suggested action.</p>
 </section>
 
 <section>
   <h2>3. Service providers and sharing</h2>
-  <p>Ennoic uses or may use the following providers to operate the features you request:</p>
+  <p>Ennoic shares information with providers as needed to operate the features you use:</p>
   <ul>
-    <li><strong>Google:</strong> verifies your identity when you choose Google sign-in.</li>
-    <li><strong>Groq:</strong> processes the message and relevant context for AI features.</li>
-    <li><strong>Database and hosting providers:</strong> store and serve account records and application data. The app uses PostgreSQL when a <code>DATABASE_URL</code> is configured and SQLite for local development.</li>
-    <li><strong>Resend or an SMTP provider:</strong> delivers account verification and password-reset emails, if email sending is configured.</li>
-    <li><strong>Payment provider:</strong> receives information needed to process a purchase and manage a subscription when checkout is enabled. The current code has a Razorpay adapter; Paddle is not currently integrated. If Paddle is added and is named as the reseller at checkout, Paddle acts as Merchant of Record for those Paddle transactions and processes buyer payment/support information under its own notices and terms.</li>
+    <li><strong>Google:</strong> handles sign-in when you choose Continue with Google. Ennoic receives your verified email address.</li>
+    <li><strong>Groq:</strong> receives messages and relevant context for AI processing, as described above.</li>
+    <li><strong>Render:</strong> hosts the Ennoic web application and may process service and request information in that role. See <a href="https://render.com/privacy" rel="noopener noreferrer">Render's Privacy Policy</a>.</li>
+    <li><strong>Neon:</strong> provides the production PostgreSQL database used for account and application records. See <a href="https://www.databricks.com/legal/privacynotice" rel="noopener noreferrer">Neon's parent company's Privacy Notice</a>.</li>
+    <li><strong>Gmail SMTP:</strong> sends account-verification and password-reset emails in the reviewed configuration. Google processes the recipient address and message needed for delivery. The application can use another configured email provider if the deployment changes.</li>
+    <li><strong>Paddle:</strong> Paddle is the intended Merchant of Record for a future Paddle checkout. It is not currently processing Ennoic payments. If a future checkout identifies Paddle as reseller, Paddle will process buyer payment and transaction information under its own terms and privacy notices.</li>
   </ul>
-  <p>Ennoic does not sell account or conversation content. Information may also be disclosed when necessary to respond to lawful requests, protect the Service or people from harm, or address fraud or abuse, subject to applicable law.</p>
+  <p>The Ennoic application stores subscription status and provider identifiers and may store checkout contact details when you ask it to save them. It does not store full payment-card numbers. Ennoic does not sell your task, conversation, or saved-memory content.</p>
 </section>
 
 <section>
-  <h2>4. Cookies and location</h2>
-  <p>The application uses session and security-related browser state to sign you in and protect account actions. The pricing page may use a request country header or browser language to select a displayed currency; this choice is not described in the application code as a separate profile field.</p>
+  <h2>4. Cookies, sessions, and currency display</h2>
+  <p>Ennoic uses a session cookie for sign-in and account state, and session data for security checks such as cross-site request protection and temporary Google sign-in state. The pricing page may use a country header or browser language to choose a displayed currency; that selection is not stored as a separate account profile field.</p>
 </section>
 
 <section>
-  <h2>5. Retention and deletion</h2>
-  <p>Account data is stored while the account is active. If you request deletion in settings, Ennoic immediately marks the account for deletion and schedules an application purge 30 days after the request. Signing in again within that 30-day period cancels the deletion request and restores account access. The current deletion process keeps a minimal audit record containing a hashed account reference, email address, request time, IP address, and deletion-status dates. Its expiry is set for 90 days after the account purge (or after a deletion cancellation, if you cancel the request); cleanup runs through the background deletion worker.</p>
-  <p>Payment-provider records, email-provider records, infrastructure logs, and backups may be subject to those providers' own retention schedules. Ennoic has not established or verified a single retention period for those systems, so no fixed period is promised here. Email <a href="mailto:ennoic.app@gmail.com">ennoic.app@gmail.com</a> for privacy or deletion questions.</p>
+  <h2>5. Retention and account deletion</h2>
+  <p>You can request account deletion in settings. The account enters a 30-day recovery period; signing in again within that period cancels the request and restores access. After the recovery period, account data is scheduled for deletion by the application. A limited deletion record containing a hashed account reference, email address, request IP address, and relevant dates is retained for 90 days after account deletion or cancellation of the request. Processing may be delayed if the service is unavailable.</p>
+  <p>Email, hosting, AI, payment, and backup providers may retain information under their own policies. Ennoic has not confirmed a single retention period across those providers and does not promise a fixed period for their logs or backups. For privacy questions, contact <a href="mailto:ennoic.app@gmail.com">ennoic.app@gmail.com</a>.</p>
 </section>
 
 <section>
-  <h2>6. Your choices</h2>
-  <p>You can manage saved memories, conversations, and tasks in the application and request deletion of your account in settings. You can also contact Ennoic at <a href="mailto:ennoic.app@gmail.com">ennoic.app@gmail.com</a> to ask about information associated with your account. Depending on your location, you may have additional rights under local privacy law; contact us and we will review your request under applicable requirements.</p>
-</section>
-
-<section>
-  <h2>7. Details that need confirmation</h2>
-  <div class="review-note">
-    <p><strong>Before relying on a deletion request for a production account, confirm that the production database applies the configured foreign-key cascades and that the background deletion worker is running.</strong> Ennoic has not established fixed retention periods for its hosting, email, AI, payment, and backup providers, so those periods are not stated here.</p>
-  </div>
+  <h2>6. Your choices and contact</h2>
+  <p>You can view or manage saved memories, conversations, and tasks in the application, and request account deletion through settings. You can contact <a href="mailto:ennoic.app@gmail.com">ennoic.app@gmail.com</a> with questions or requests concerning information associated with your account. Rights available to you depend on applicable law.</p>
 </section>
 {% endblock %}

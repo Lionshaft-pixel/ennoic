@@ -2,54 +2,52 @@
 {% set page_title = "Terms of Service" %}
 {% set page_label = "TERMS OF SERVICE" %}
 {% set page_description = "Terms for using Ennoic's AI-powered task, conversation, and memory service." %}
-{% set summary = "Ennoic helps you organize tasks and use an AI assistant. AI can make mistakes, so review its answers and suggested changes. Pro is a recurring monthly plan when offered at checkout; cancellation stops future renewals, and refund requests follow the payment provider's process and applicable law." %}
+{% set summary = "Ennoic helps you organize tasks and use AI assistance. AI can make mistakes, so review its answers and suggested actions. Free and Pro both have monthly AI limits. Pro is a recurring monthly subscription when available; cancellation stops future renewals, while refunds are handled separately under the applicable policy and law." %}
 
 {% block legal_content %}
 <section>
-  <h2>1. About these terms</h2>
-  <p>These Terms of Service govern your access to and use of Ennoic, including its website, account features, task management, saved memories, conversation history, and AI-assisted features (the “Service”). “Ennoic” is the product name. The legal identity of the Service's operator is listed below as an item that still needs confirmation.</p>
+  <h2>1. Using Ennoic</h2>
+  <p>These Terms apply when you access or use Ennoic's website, account features, task management, conversations, saved memories, and AI assistance (the “Service”). Ennoic is the name of the product. The contracting party and legal details are addressed in the pending-review section below.</p>
   <p>By creating an account or using the Service, you agree to these Terms. If you do not agree, do not use the Service.</p>
 </section>
 
 <section>
-  <h2>2. Accounts and account security</h2>
-  <p>You can create an account with an email address and password or use Google sign-in. Keep your sign-in details private and tell us promptly if you believe someone else has accessed your account. You are responsible for activity carried out through your account, except where applicable law says otherwise.</p>
+  <h2>2. Accounts</h2>
+  <p>You can register with an email address and password or use Google sign-in. Provide accurate account information, keep your sign-in credentials private, and contact us if you believe your account has been accessed without permission. You are responsible for activity through your account, subject to rights that cannot be limited by law.</p>
 </section>
 
 <section>
-  <h2>3. What Ennoic does</h2>
-  <p>Ennoic provides task management, conversations with an AI assistant, and optional saved memories that help the assistant respond using information you chose to store. AI responses and proposed task or memory actions can be incomplete or inaccurate. Review them before relying on them or confirming changes.</p>
-  <p>Plan limits and features can change and are shown on the <a href="{{ url_for('pricing_page') }}">pricing page</a>. The current plan configuration provides Free accounts with monthly AI request, memory, and conversation-history limits; Pro provides higher configured limits and expanded history. File attachments are not currently available in the application.</p>
+  <h2>3. Plans and AI features</h2>
+  <p>Ennoic Free provides limited AI usage and features. Ennoic Pro is a paid monthly subscription with higher configured limits and expanded conversation history. Neither plan includes unlimited AI requests. Current features, limits, prices, and currency are shown on the <a href="{{ url_for('pricing_page') }}">pricing page</a> and, before a purchase, in checkout. If the price or plan details shown at checkout differ, review them before confirming.</p>
+  <p>Ennoic can help manage tasks, answer questions, and work with saved memories. AI responses and proposed task or memory actions may be inaccurate or incomplete. Review AI-generated information and confirm proposed changes before relying on them or applying them.</p>
 </section>
 
 <section>
   <h2>4. Your content and acceptable use</h2>
-  <p>You remain responsible for the text and information you submit, including making sure you have the right to submit it. Do not use Ennoic to break the law, violate another person's rights, or attempt to disrupt, reverse engineer, or gain unauthorized access to the Service.</p>
-  <p>Do not submit information you would not want processed by the AI provider. See the <a href="{{ url_for('privacy_page') }}">Privacy Policy</a> for details about AI processing.</p>
+  <p>You are responsible for the information and content you submit, including ensuring you have the right to provide it. Do not use the Service unlawfully, to violate another person's rights, or to interfere with or gain unauthorized access to the Service or its systems.</p>
+  <p>Messages and relevant conversation or memory context may be sent to an AI service provider to answer your request. Avoid submitting sensitive information you do not want processed that way. See the <a href="{{ url_for('privacy_page') }}">Privacy Policy</a>.</p>
 </section>
 
 <section>
-  <h2>5. Pro subscriptions, billing, and cancellation</h2>
-  <p>When Pro is available for purchase, it is offered as a monthly recurring subscription at the price and currency shown in checkout. Prices may differ by region or configuration. The checkout screen and payment provider will show the amount, billing interval, applicable taxes, and payment terms before you confirm. By subscribing, you authorize recurring monthly charges until cancellation.</p>
-  <p>You may cancel to stop future renewals. A cancellation normally takes effect at the end of the current paid billing period, and access to Pro may continue until then. If Paddle processes your order, use the subscription-management link in Paddle's receipt or visit <a href="https://paddle.net/" rel="noopener noreferrer">Paddle Buyer Support</a>. For orders handled by another provider, follow that provider's cancellation instructions or contact us at <a href="mailto:ennoic.app@gmail.com">ennoic.app@gmail.com</a>.</p>
-  <p>Refund requests are handled as described in our <a href="{{ url_for('refund_policy_page') }}">Refund Policy</a>. Applicable consumer rights are not limited by these Terms.</p>
+  <h2>5. Pro billing and cancellation</h2>
+  <p>When Pro checkout is available, it is a recurring monthly subscription. The price, currency, billing interval, and any applicable taxes are displayed before you confirm. By subscribing, you authorize recurring monthly charges until you cancel.</p>
+  <p>For a Paddle subscription, use the subscription-management link in the Paddle receipt or customer portal, or visit <a href="https://paddle.net/" rel="noopener noreferrer">Paddle Buyer Support</a>. A Paddle cancellation scheduled for the end of the billing period prevents future renewals, and Pro access ordinarily continues through the paid period. A cancellation does not itself refund an earlier charge. See the <a href="{{ url_for('refund_policy_page') }}">Refund Policy</a> for refund requests and applicable rights.</p>
 </section>
 
 <section>
-  <h2>6. Payment provider and Paddle orders</h2>
-  <p>The payment provider identified during checkout processes the payment and may collect payment and billing information directly. Ennoic does not receive full payment-card credentials through the application code reviewed for this policy.</p>
-  <p><strong>Paddle is not currently integrated into this application's checkout.</strong> If a future checkout identifies Paddle.com as the reseller for an order, the following applies to that Paddle-processed order: “Our order process is conducted by our online reseller Paddle.com. Paddle.com is the Merchant of Record for all our orders. Paddle provides all customer service inquiries and handles returns.” In that case Paddle is the Merchant of Record for the transaction and handles buyer payment support and returns under its <a href="https://www.paddle.com/legal/buyer-terms" rel="noopener noreferrer">Buyer Terms</a> and related policies. This statement does not apply to orders processed by another provider.</p>
+  <h2>6. Paddle-processed orders</h2>
+  <p>Only where a checkout identifies Paddle.com as the reseller, this statement applies to that Paddle-processed order: “Our order process is conducted by our online reseller Paddle.com. Paddle.com is the Merchant of Record for all our orders. Paddle provides all customer service inquiries and handles returns.” Paddle processes the transaction and buyer payment support for those orders; Ennoic provides the Service. The <a href="https://www.paddle.com/legal/buyer-terms" rel="noopener noreferrer">Paddle Buyer Terms</a> and applicable Paddle policies also apply to the purchase.</p>
 </section>
 
 <section>
-  <h2>7. Ending or changing the Service</h2>
-  <p>You can stop using Ennoic at any time and request account deletion through account settings. The Service and its features may be updated or discontinued. Any terms required for a specific purchase will also be shown by the applicable checkout provider.</p>
+  <h2>7. Ending use of the Service</h2>
+  <p>You can stop using Ennoic at any time and request account deletion through account settings. Account deletion is subject to the process described in the <a href="{{ url_for('privacy_page') }}">Privacy Policy</a>.</p>
 </section>
 
 <section>
-  <h2>8. Details that need confirmation</h2>
-  <div class="review-note">
-    <p><strong>Before accepting paid orders, Ennoic's operator must confirm and publish its legal name and business address, and the governing law and dispute forum for these Terms.</strong> These details are not stated here because they have not been verified. Ennoic is the product name and is not represented here as a registered legal entity.</p>
+  <h2>8. Contracting party and applicable law</h2>
+  <div class="pending-policy">
+    <p><strong>Pending review:</strong> Ennoic is a product name. The legal person or business operating the Service, its business address, and the governing-law and dispute-resolution forum have not been confirmed, so these Terms do not identify an entity or select a jurisdiction. These details must be completed before paid subscriptions are offered. This section does not limit consumer rights that cannot legally be waived.</p>
   </div>
 </section>
 {% endblock %}
