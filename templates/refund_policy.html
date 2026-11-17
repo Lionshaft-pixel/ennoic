@@ -1,0 +1,35 @@
+{% extends "legal_page.html" %}
+{% set page_title = "Refund Policy" %}
+{% set page_label = "REFUND POLICY" %}
+{% set page_description = "How Ennoic Pro subscription cancellation and refund requests are handled." %}
+{% set summary = "Pro renews monthly when purchased as a subscription. Cancel through the payment provider to stop future renewals. A cancellation is not itself a refund. For Paddle-processed orders, request any refund through Paddle; eligibility depends on Paddle's current policy and applicable consumer law. Ennoic does not promise an automatic refund." %}
+
+{% block legal_content %}
+<section>
+  <h2>1. Scope</h2>
+  <p>This policy explains cancellation and refund requests for paid Ennoic plans. The amount, currency, renewal interval, taxes, and payment provider are shown in checkout before you confirm a purchase. Ennoic does not currently have a Paddle checkout integration in the application.</p>
+</section>
+
+<section>
+  <h2>2. Recurring Pro subscriptions and cancellation</h2>
+  <p>Where offered, Pro is a monthly recurring subscription. It renews automatically at the price shown in checkout until canceled. Canceling stops future renewals; it does not automatically refund a charge already made. Unless the checkout provider or applicable law provides otherwise, access remains available through the paid billing period and then returns to the Free plan.</p>
+  <p>If Paddle processes your order, use the “Manage subscription” link in your Paddle receipt or visit <a href="https://paddle.net/" rel="noopener noreferrer">Paddle Buyer Support</a> to cancel. Paddle says cancellation normally takes effect at the end of the current billing period and prevents further payments. If another provider processes the order, follow that provider's cancellation instructions or email <a href="mailto:ennoic.app@gmail.com">ennoic.app@gmail.com</a> for help.</p>
+</section>
+
+<section>
+  <h2>3. Requesting a refund</h2>
+  <p><strong>For Paddle-processed transactions:</strong> Paddle is the Merchant of Record and handles buyer payment support and refund requests. Submit a request using the support link in your receipt or through <a href="https://paddle.net/" rel="noopener noreferrer">Paddle.net</a>. Paddle reviews requests under its current <a href="https://www.paddle.com/legal/refund-policy" rel="noopener noreferrer">Buyer Refund Policy</a>, <a href="https://www.paddle.com/legal/buyer-terms" rel="noopener noreferrer">Buyer Terms</a>, and applicable law. Paddle's policy says transactions are generally non-refundable unless a legal right applies, while Paddle may also grant discretionary refunds; the policy varies by jurisdiction and transaction. This page does not promise that a request will be approved.
+  </p>
+  <p><strong>For transactions processed by another provider:</strong> contact <a href="mailto:ennoic.app@gmail.com">ennoic.app@gmail.com</a> with the account email, transaction date, and payment reference. We will review the request with the applicable provider. No refund is promised by this policy; any decision remains subject to the provider's process and applicable law.</p>
+</section>
+
+<section>
+  <h2>4. Consumer rights</h2>
+  <p>This policy does not remove or restrict consumer rights that cannot legally be waived. Rules on withdrawal periods, digital services, subscription renewals, and refunds vary by country. Where applicable law gives you a right that is more protective than this policy, that law applies.</p>
+</section>
+
+<section>
+  <h2>5. Contact and details to confirm</h2>
+  <p>For help, email <a href="mailto:ennoic.app@gmail.com">ennoic.app@gmail.com</a>. Paddle's seller guidance asks sellers to provide buyer support contact details, including a phone number, and to use the Paddle Buyer Support route for Paddle orders. Ennoic has not supplied a public support phone number, and Paddle is not currently integrated in this application. Confirm these operational details before Paddle review or enabling Paddle checkout.</p>
+</section>
+{% endblock %}
