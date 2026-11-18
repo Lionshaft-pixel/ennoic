@@ -54,8 +54,15 @@
       const response = await fetch("/api/entitlements", { credentials: "same-origin" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || t("planLoadFailed"));
-      $("account-plan-name").textContent = t(data.plan === "pro" ? "planPro" : "planFree");
-      status.textContent = t(data.status === "active" ? "subscriptionActive" : data.status === "canceled" ? "subscriptionCanceled" : "subscriptionFree");
+      const pro = data.plan === "pro";
+      $("account-plan-name").dataset.i18n = pro ? "ennoicPro" : "freePlan";
+      $("account-plan-name").textContent = t(pro ? "ennoicPro" : "freePlan");
+      $("account-plan-separator").hidden = !pro;
+      const statusKey = data.status === "active" ? "subscriptionActive"
+        : data.status === "canceled" ? "subscriptionCanceled"
+          : pro && data.status === "past_due" ? "subscriptionPastDue" : "subscriptionFree";
+      status.dataset.i18n = statusKey;
+      status.textContent = t(statusKey);
       const quota = data.usage.ai_requests;
       $("manage-paddle-subscription").hidden = data.provider !== "paddle";
       const percent = quota.limit > 0

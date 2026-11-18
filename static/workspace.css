@@ -55,6 +55,10 @@ button:disabled { cursor: not-allowed; }
 .rail-icon { width: 17px; height: 17px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .rail-end { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: auto; }
 .avatar { display: grid; width: 28px; height: 28px; place-items: center; overflow: hidden; margin-top: 2px; border-radius: 50%; background: linear-gradient(135deg, #c4b5fd, #7c3aed); color: #fff; font-size: 11px; font-weight: 650; text-overflow: ellipsis; }
+.account-menu-user { display: flex; min-width: 0; flex: none; align-items: center; gap: 7px; margin-top: 10px; padding: 10px 2px 0; border-top: 1px solid var(--border); }
+.account-menu-user .account-email { min-width: 0; flex: 1; margin: 0; padding: 0; border: 0; }
+.pro-badge { display: inline-flex; flex: none; align-items: center; justify-content: center; padding: 3px 7px; border: 1px solid rgba(246, 208, 89, .38); border-radius: 999px; background: linear-gradient(135deg, rgba(246, 208, 89, .2), rgba(184, 134, 11, .12)); color: #f6d76f; font-size: 9px; font-weight: 800; letter-spacing: .09em; line-height: 1.2; }
+.pro-badge:focus-visible { outline: 2px solid #f6d76f; outline-offset: 2px; }
 
 .main { position: relative; display: flex; min-width: 0; min-height: 0; flex-direction: column; background: linear-gradient(180deg, var(--panel) 55%, var(--surface)); }
 .top { z-index: 2; display: flex; height: 58px; flex: none; align-items: center; gap: 10px; padding: 0 20px; }

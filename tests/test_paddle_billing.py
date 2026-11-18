@@ -85,6 +85,24 @@ class PaddleBillingTests(unittest.TestCase):
         self.assertEqual(success_page.status_code, 200)
         self.assertEqual(entitlements.account_entitlements(self.user["id"])["plan"], "free")
 
+    def test_paddle_webhook_updates_badge_and_settings_after_refresh(self):
+        client = app_module.app.test_client()
+        client.post("/auth/login", data={"email": self.user["email"], "password": "correct-horse-battery-7"})
+        initial_home = client.get("/").get_data(as_text=True)
+        self.assertRegex(initial_home, r'id="account-pro-badge"[^>]*hidden')
+        token = account_store.create_paddle_checkout_intent(
+            self.user["id"], "sandbox", "pri_sandbox_monthly"
+        )
+        body, signature = self.signed(self.subscription_event(intent=token))
+        webhook = client.post("/api/paddle/webhook", data=body, headers={"Paddle-Signature": signature})
+        self.assertEqual(webhook.status_code, 200)
+        self.assertTrue(webhook.get_json()["processed"])
+        refreshed_home = client.get("/").get_data(as_text=True)
+        self.assertRegex(refreshed_home, r'id="account-pro-badge"[^>]*>PRO</span>')
+        refreshed_settings = client.get("/settings").get_data(as_text=True)
+        self.assertIn("Ennoic Pro</h3>", refreshed_settings)
+        self.assertIn(">Active</span>", refreshed_settings)
+
     def test_active_subscription_grants_pro_only_from_verified_subscription_event(self):
         token = account_store.create_paddle_checkout_intent(
             self.user["id"], "sandbox", "pri_sandbox_monthly"

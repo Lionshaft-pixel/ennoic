@@ -531,7 +531,11 @@ def _post_login_redirect():
 @app.route("/")
 def home():
     if current_user.is_authenticated:
-        return render_template("index.html", user=current_user, csrf_token=generate_csrf())
+        account_plan = entitlements.account_entitlements(current_user.id)["plan"]
+        return render_template(
+            "index.html", user=current_user, account_plan=account_plan,
+            csrf_token=generate_csrf(),
+        )
     g.landing_csp_nonce = secrets.token_urlsafe(18)
     return render_template("landing.html", csp_nonce=g.landing_csp_nonce)
 
@@ -539,9 +543,11 @@ def home():
 @app.route("/settings")
 @login_required
 def settings_page():
+    account = entitlements.account_entitlements(current_user.id)
     return render_template(
         "settings.html",
         user=current_user,
+        account=account,
         is_admin=_is_configured_admin(current_user.email),
         csrf_token=generate_csrf(),
     )

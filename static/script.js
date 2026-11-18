@@ -1147,7 +1147,11 @@ els.newChat.addEventListener("click", startNewChat);
 els.search.addEventListener("input", renderHistory);
 els.openSettings.addEventListener("click", () => window.location.assign("/settings"));
 requestJSON("/api/entitlements")
-  .then((account) => { els.upgrade.hidden = account.plan !== "free"; })
+  .then((account) => {
+    els.upgrade.hidden = account.plan !== "free";
+    const proBadge = $("account-pro-badge");
+    if (proBadge) proBadge.hidden = account.plan !== "pro";
+  })
   .catch(() => {});
 
 /* ---------- Start ---------- */

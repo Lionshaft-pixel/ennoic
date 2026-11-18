@@ -48,7 +48,10 @@
         <p class="history-empty" id="history-empty"></p>
         <p class="history-status" id="history-status" role="status" aria-live="polite" hidden></p>
       </nav>
-      <p class="account-email" title="{{ user.email }}">{{ user.email }}</p>
+      <div class="account-menu-user" role="group" aria-label="Account">
+        <p class="account-email" title="{{ user.email }}">{{ user.email }}</p>
+        <span class="pro-badge" id="account-pro-badge" aria-label="Ennoic Pro subscriber" title="Ennoic Pro" {% if account_plan != 'pro' %}hidden{% endif %}>PRO</span>
+      </div>
     </aside>
     <main class="main">
       <header class="top">

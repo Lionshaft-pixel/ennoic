@@ -16,7 +16,16 @@ class EntitlementTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.database_patch = patch.dict(
             os.environ,
-            {"ENNOIC_TASK_DB": os.path.join(self.temp_dir.name, "entitlements.sqlite3")},
+            {
+                "ENNOIC_TASK_DB": os.path.join(self.temp_dir.name, "entitlements.sqlite3"),
+                "PADDLE_ENVIRONMENT": "",
+                "PADDLE_CLIENT_TOKEN": "",
+                "PADDLE_API_KEY": "",
+                "PADDLE_WEBHOOK_SECRET": "",
+                "PADDLE_PRICE_ID_SANDBOX": "",
+                "PADDLE_PRICE_ID_LIVE": "",
+                "PADDLE_LIVE_CHECKOUT_ENABLED": "false",
+            },
         )
         self.database_patch.start()
         self.addCleanup(self.database_patch.stop)
@@ -192,6 +201,26 @@ class EntitlementTests(unittest.TestCase):
         self.assertEqual(view["usage"]["memories"]["limit"], 250)
         self.assertIsNone(view["usage"]["conversations"]["limit"])
         self.assertFalse(self.apply_pro_event(user))  # duplicate verified event is idempotent
+
+    def test_pro_badge_and_account_plan_refresh_from_authenticated_entitlements(self):
+        user = self.create_user()
+        client = self.logged_in_client(user)
+
+        free_home = client.get("/").get_data(as_text=True)
+        self.assertIn('id="account-pro-badge"', free_home)
+        self.assertRegex(free_home, r'id="account-pro-badge"[^>]*hidden')
+        free_settings = client.get("/settings").get_data(as_text=True)
+        self.assertIn("Free Plan", free_settings)
+        self.assertNotIn("Ennoic Pro</h3>", free_settings)
+        self.assertEqual(client.get("/api/entitlements").get_json()["plan"], "free")
+
+        self.assertTrue(self.apply_pro_event(user))
+        pro_home = client.get("/").get_data(as_text=True)
+        self.assertRegex(pro_home, r'id="account-pro-badge"[^>]*>PRO</span>')
+        pro_settings = client.get("/settings").get_data(as_text=True)
+        self.assertIn("Ennoic Pro</h3>", pro_settings)
+        self.assertIn(">Active</span>", pro_settings)
+        self.assertEqual(client.get("/api/entitlements").get_json()["plan"], "pro")
 
     def test_checkout_or_client_supplied_plan_does_not_grant_pro(self):
         user = self.create_user()
