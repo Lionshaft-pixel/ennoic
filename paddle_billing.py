@@ -27,17 +27,45 @@ def environment():
     return value if value in {"sandbox", "production"} else None
 
 
+def _environment_value(name, env=None):
+    """Resolve an environment-scoped Paddle credential; legacy names are sandbox-only."""
+    env = env or environment()
+    if env not in {"sandbox", "production"}:
+        return ""
+    suffix = "SANDBOX" if env == "sandbox" else "LIVE"
+    scoped = _env(f"{name}_{suffix}")
+    if scoped:
+        return scoped
+    return _env(name) if env == "sandbox" else ""
+
+
 def price_id(env=None):
     env = env or environment()
+    if env not in {"sandbox", "production"}:
+        return ""
     key = "PADDLE_PRICE_ID_SANDBOX" if env == "sandbox" else "PADDLE_PRICE_ID_LIVE"
-    return _env(key) if env else ""
+    return _env(key)
 
 
 def client_token(env=None):
     env = env or environment()
-    token = _env("PADDLE_CLIENT_TOKEN")
+    token = _environment_value("PADDLE_CLIENT_TOKEN", env)
     expected_prefix = "test_" if env == "sandbox" else "live_"
     return token if env and token.startswith(expected_prefix) else ""
+
+
+def configured_api_key(env=None):
+    return _environment_value("PADDLE_API_KEY", env)
+
+
+def webhook_secret(env=None):
+    env = env or environment()
+    secret = _environment_value("PADDLE_WEBHOOK_SECRET", env)
+    if env == "production" and secret:
+        sandbox_secret = _env("PADDLE_WEBHOOK_SECRET_SANDBOX") or _env("PADDLE_WEBHOOK_SECRET")
+        if sandbox_secret and hmac.compare_digest(secret, sandbox_secret):
+            return ""
+    return secret
 
 
 def live_checkout_enabled():
@@ -51,13 +79,15 @@ def checkout_configuration():
         missing.append("PADDLE_ENVIRONMENT must be sandbox or production")
     if env and not client_token(env):
         expected = "test_" if env == "sandbox" else "live_"
-        missing.append(f"PADDLE_CLIENT_TOKEN must be a {expected} client-side token for {env}")
+        suffix = "SANDBOX" if env == "sandbox" else "LIVE"
+        missing.append(f"PADDLE_CLIENT_TOKEN_{suffix} must be a {expected} client-side token for {env}")
     if env and not price_id(env):
         missing.append("PADDLE_PRICE_ID_SANDBOX" if env == "sandbox" else "PADDLE_PRICE_ID_LIVE")
-    if not _env("PADDLE_API_KEY"):
-        missing.append("PADDLE_API_KEY")
-    if not _env("PADDLE_WEBHOOK_SECRET"):
-        missing.append("PADDLE_WEBHOOK_SECRET")
+    suffix = "SANDBOX" if env == "sandbox" else "LIVE"
+    if not configured_api_key(env):
+        missing.append(f"PADDLE_API_KEY_{suffix}")
+    if not webhook_secret(env):
+        missing.append(f"PADDLE_WEBHOOK_SECRET_{suffix}")
     if env == "production" and not live_checkout_enabled():
         missing.append("live checkout is disabled until PADDLE_LIVE_CHECKOUT_ENABLED=true")
     if env and price_id(env) and not price_id(env).startswith("pri_"):
@@ -85,9 +115,11 @@ def _parse_timestamp(value, label):
 
 def verify_webhook_signature(raw_body, signature, *, secret=None, now=None, tolerance_seconds=300):
     """Verify Paddle-Signature against the unmodified request body."""
-    secret = secret if secret is not None else _env("PADDLE_WEBHOOK_SECRET")
+    secret = secret if secret is not None else webhook_secret()
     if not secret:
-        raise PaddleUnavailable("PADDLE_WEBHOOK_SECRET is not configured.")
+        env = environment()
+        suffix = "SANDBOX" if env == "sandbox" else "LIVE"
+        raise PaddleUnavailable(f"PADDLE_WEBHOOK_SECRET_{suffix} is not configured.")
     if not isinstance(raw_body, bytes):
         raise ValueError("Paddle webhook body must be raw bytes.")
     if not isinstance(signature, str):
@@ -151,7 +183,10 @@ def _event_base(event):
 
 
 def process_webhook(raw_body, signature):
-    verify_webhook_signature(raw_body, signature)
+    env = environment()
+    if env is None:
+        raise PaddleUnavailable("PADDLE_ENVIRONMENT must be sandbox or production.")
+    verify_webhook_signature(raw_body, signature, secret=webhook_secret(env))
     try:
         event = json.loads(raw_body)
     except (TypeError, ValueError) as exc:
@@ -159,10 +194,8 @@ def process_webhook(raw_body, signature):
     if not isinstance(event, dict):
         raise ValueError("Invalid Paddle webhook event.")
     event_id, event_type, occurred_at, data = _event_base(event)
-    env = environment()
-    if env is None:
-        raise PaddleUnavailable("PADDLE_ENVIRONMENT must be sandbox or production.")
     expected_price = price_id(env)
+    event_source = "paddle" if env == "sandbox" else "paddle:production"
 
     if event_type.startswith("transaction."):
         relevant = {
@@ -190,6 +223,7 @@ def process_webhook(raw_body, signature):
             subscription_id=data.get("subscription_id"),
             price_id=item_price,
             checkout_token=_custom_checkout_token(data),
+            event_source=event_source,
         )
 
     supported = {
@@ -245,17 +279,19 @@ def process_webhook(raw_body, signature):
         period_end=period_end,
         cancel_at=cancel_at,
         checkout_token=_custom_checkout_token(data),
+        event_source=event_source,
     )
 
 
 class PaddleAPI:
     def __init__(self, *, api_key=None, env=None):
-        self.api_key = api_key if api_key is not None else _env("PADDLE_API_KEY")
         self.env = env or environment()
         if self.env not in {"sandbox", "production"}:
             raise PaddleUnavailable("PADDLE_ENVIRONMENT must be sandbox or production.")
+        self.api_key = api_key if api_key is not None else configured_api_key(self.env)
         if not self.api_key:
-            raise PaddleUnavailable("PADDLE_API_KEY is not configured.")
+            suffix = "SANDBOX" if self.env == "sandbox" else "LIVE"
+            raise PaddleUnavailable(f"PADDLE_API_KEY_{suffix} is not configured.")
         self.base_url = (
             "https://sandbox-api.paddle.com" if self.env == "sandbox" else "https://api.paddle.com"
         )

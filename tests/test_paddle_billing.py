@@ -6,7 +6,7 @@ import tempfile
 import time
 import unittest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import account_store
 import app as app_module
@@ -20,9 +20,9 @@ class PaddleBillingTests(unittest.TestCase):
         self.env_patch = patch.dict(os.environ, {
             "ENNOIC_TASK_DB": os.path.join(self.temp_dir.name, "paddle.sqlite3"),
             "PADDLE_ENVIRONMENT": "sandbox",
-            "PADDLE_CLIENT_TOKEN": "test_client_token",
-            "PADDLE_API_KEY": "sandbox_api_key",
-            "PADDLE_WEBHOOK_SECRET": "whsec_test_secret",
+            "PADDLE_CLIENT_TOKEN_SANDBOX": "test_client_token",
+            "PADDLE_API_KEY_SANDBOX": "sandbox_api_key",
+            "PADDLE_WEBHOOK_SECRET_SANDBOX": "whsec_test_secret",
             "PADDLE_PRICE_ID_SANDBOX": "pri_sandbox_monthly",
             "PADDLE_PRICE_ID_LIVE": "",
             "PADDLE_LIVE_CHECKOUT_ENABLED": "false",
@@ -64,6 +64,16 @@ class PaddleBillingTests(unittest.TestCase):
         if scheduled_cancel_at:
             data["scheduled_change"] = {"action": "cancel", "effective_at": scheduled_cancel_at}
         return {"event_id": event_id, "event_type": event_type, "occurred_at": occurred_at, "data": data}
+
+    def live_environment(self, *, checkout_enabled="false"):
+        return {
+            "PADDLE_ENVIRONMENT": "production",
+            "PADDLE_CLIENT_TOKEN_LIVE": "live_client_token",
+            "PADDLE_API_KEY_LIVE": "live_api_key",
+            "PADDLE_WEBHOOK_SECRET_LIVE": "whsec_live_secret",
+            "PADDLE_PRICE_ID_LIVE": "pri_live_monthly",
+            "PADDLE_LIVE_CHECKOUT_ENABLED": checkout_enabled,
+        }
 
     def test_signature_requires_exact_raw_body_and_recent_timestamp(self):
         event = self.subscription_event()
@@ -177,13 +187,115 @@ class PaddleBillingTests(unittest.TestCase):
             self.assertEqual(entitlements.account_entitlements(self.user["id"])["plan"], "free")
 
     def test_live_checkout_is_disabled_by_default_even_with_live_ids(self):
-        with patch.dict(os.environ, {"PADDLE_ENVIRONMENT": "production", "PADDLE_CLIENT_TOKEN": "live_token",
-                                     "PADDLE_API_KEY": "live_key", "PADDLE_WEBHOOK_SECRET": "live_secret",
-                                     "PADDLE_PRICE_ID_LIVE": "pri_live_monthly",
-                                     "PADDLE_LIVE_CHECKOUT_ENABLED": "false"}):
+        with patch.dict(os.environ, self.live_environment()):
             config = paddle_billing.checkout_configuration()
         self.assertFalse(config["ready"])
         self.assertIn("disabled", config["message"])
+        with patch.dict(os.environ, self.live_environment(checkout_enabled="true")):
+            enabled = paddle_billing.checkout_configuration()
+        self.assertTrue(enabled["ready"])
+
+    def test_production_ignores_legacy_unscoped_sandbox_credentials(self):
+        values = {
+            "PADDLE_ENVIRONMENT": "production",
+            "PADDLE_CLIENT_TOKEN": "live_wrongly_shared_token",
+            "PADDLE_API_KEY": "sandbox_api_key",
+            "PADDLE_WEBHOOK_SECRET": "whsec_test_secret",
+            "PADDLE_PRICE_ID_LIVE": "pri_live_monthly",
+            "PADDLE_LIVE_CHECKOUT_ENABLED": "true",
+        }
+        with patch.dict(os.environ, values):
+            config = paddle_billing.checkout_configuration()
+            self.assertEqual(paddle_billing.client_token(), "")
+            with self.assertRaisesRegex(paddle_billing.PaddleUnavailable, "PADDLE_API_KEY_LIVE"):
+                paddle_billing.PaddleAPI()
+            with self.assertRaisesRegex(paddle_billing.PaddleUnavailable, "PADDLE_WEBHOOK_SECRET_LIVE"):
+                paddle_billing.process_webhook(b"{}", "ts=1;h1=invalid")
+        self.assertFalse(config["ready"])
+        self.assertIn("PADDLE_CLIENT_TOKEN_LIVE", config["message"])
+
+    def test_production_rejects_a_signing_secret_reused_from_sandbox(self):
+        values = self.live_environment()
+        values["PADDLE_WEBHOOK_SECRET_LIVE"] = "whsec_test_secret"
+        with patch.dict(os.environ, values):
+            self.assertEqual(paddle_billing.webhook_secret("production"), "")
+            self.assertFalse(paddle_billing.checkout_configuration()["ready"])
+
+    def test_sandbox_subscription_is_retained_but_cannot_grant_pro_after_live_switch(self):
+        sandbox_intent = account_store.create_paddle_checkout_intent(
+            self.user["id"], "sandbox", "pri_sandbox_monthly"
+        )
+        sandbox_event = self.subscription_event(intent=sandbox_intent)
+        sandbox_body, sandbox_signature = self.signed(sandbox_event)
+        self.assertTrue(paddle_billing.process_webhook(sandbox_body, sandbox_signature))
+        self.assertEqual(entitlements.account_entitlements(self.user["id"])["plan"], "pro")
+
+        sandbox_record = account_store.get_paddle_subscription(self.user["id"], "sandbox")
+        self.assertEqual(sandbox_record["environment"], "sandbox")
+        with patch.dict(os.environ, self.live_environment()):
+            self.assertEqual(entitlements.account_entitlements(self.user["id"])["plan"], "free")
+            retained = account_store.get_paddle_subscription(self.user["id"], "sandbox")
+            self.assertEqual(retained["paddle_subscription_id"], sandbox_record["paddle_subscription_id"])
+            self.assertEqual(retained["status"], "active")
+
+            # Paddle event IDs are scoped by environment, so a sandbox delivery cannot
+            # suppress the corresponding live event even if the IDs happen to collide.
+            live_intent = account_store.create_paddle_checkout_intent(
+                self.user["id"], "production", "pri_live_monthly"
+            )
+            live_event = self.subscription_event(intent=live_intent, subscription_id="sub_paddle_live")
+            live_event["data"]["items"][0]["price"]["id"] = "pri_live_monthly"
+            live_body, live_signature = self.signed(live_event, secret="whsec_live_secret")
+            self.assertTrue(paddle_billing.process_webhook(live_body, live_signature))
+            self.assertEqual(entitlements.account_entitlements(self.user["id"])["plan"], "pro")
+            self.assertEqual(
+                account_store.get_paddle_subscription(self.user["id"], "production")["environment"],
+                "production",
+            )
+            self.assertEqual(
+                account_store.get_paddle_subscription(self.user["id"], "sandbox")["paddle_subscription_id"],
+                sandbox_record["paddle_subscription_id"],
+            )
+
+    def test_production_webhook_requires_live_secret_and_live_checkout_intent(self):
+        live_intent = account_store.create_paddle_checkout_intent(
+            self.user["id"], "production", "pri_live_monthly"
+        )
+        event = self.subscription_event(intent=live_intent)
+        event["data"]["items"][0]["price"]["id"] = "pri_live_monthly"
+        with patch.dict(os.environ, self.live_environment()):
+            body, sandbox_signature = self.signed(event, secret="whsec_test_secret")
+            with self.assertRaisesRegex(ValueError, "Invalid Paddle webhook signature"):
+                paddle_billing.process_webhook(body, sandbox_signature)
+
+            body, live_signature = self.signed(event, secret="whsec_live_secret")
+            self.assertTrue(paddle_billing.process_webhook(body, live_signature))
+            self.assertEqual(entitlements.account_entitlements(self.user["id"])["plan"], "pro")
+
+    def test_live_portal_uses_production_api_key_and_endpoint(self):
+        token = account_store.create_paddle_checkout_intent(
+            self.user["id"], "production", "pri_live_monthly"
+        )
+        event = self.subscription_event(intent=token)
+        event["data"]["id"] = "sub_paddle_live"
+        event["data"]["items"][0]["price"]["id"] = "pri_live_monthly"
+        body, signature = self.signed(event, secret="whsec_live_secret")
+        client = app_module.app.test_client()
+        client.post("/auth/login", data={"email": self.user["email"], "password": "correct-horse-battery-7"})
+
+        with patch.dict(os.environ, self.live_environment()):
+            self.assertTrue(paddle_billing.process_webhook(body, signature))
+            response_mock = Mock()
+            response_mock.json.return_value = {
+                "data": {"urls": {"subscriptions": [{"view_subscription": "https://portal.example.test/live"}]}}
+            }
+            with patch("paddle_billing.requests.post", return_value=response_mock) as post:
+                response = client.post("/api/paddle/portal")
+
+        self.assertEqual(response.status_code, 200)
+        args, kwargs = post.call_args
+        self.assertTrue(args[0].startswith("https://api.paddle.com/"))
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer live_api_key")
 
     def test_checkout_intent_is_authenticated_and_portal_ignores_supplied_customer_id(self):
         client = app_module.app.test_client()

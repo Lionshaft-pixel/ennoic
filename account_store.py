@@ -1087,14 +1087,14 @@ def _paddle_event_is_newer(occurred_at, provider_updated_at, row):
 
 def record_paddle_transaction_event(*, event_id, event_type, occurred_at, transaction_id,
                                     status, environment, customer_id=None, subscription_id=None,
-                                    price_id=None, checkout_token=None):
+                                    price_id=None, checkout_token=None, event_source="paddle"):
     """Record signed Paddle transaction events without granting Pro access."""
     now = _now()
     with connection() as db:
         db.execute("BEGIN IMMEDIATE")
         inserted = db.execute(
             "INSERT OR IGNORE INTO processed_subscription_events (provider, event_id, processed_at) "
-            "VALUES ('paddle', ?, ?)", (event_id, now),
+            "VALUES (?, ?, ?)", (event_source, event_id, now),
         )
         if inserted.rowcount == 0:
             return False
@@ -1168,7 +1168,8 @@ def record_paddle_transaction_event(*, event_id, event_type, occurred_at, transa
 
 def apply_paddle_subscription_event(*, event_id, occurred_at, provider_updated_at, environment,
                                     subscription_id, customer_id, status, price_id, period_start=None,
-                                    period_end=None, cancel_at=None, checkout_token=None):
+                                    period_end=None, cancel_at=None, checkout_token=None,
+                                    event_source="paddle"):
     """Atomically deduplicate, order, and persist a signed Paddle subscription snapshot."""
     if environment not in {"sandbox", "production"}:
         raise ValueError("Unsupported Paddle environment.")
@@ -1179,7 +1180,7 @@ def apply_paddle_subscription_event(*, event_id, occurred_at, provider_updated_a
         db.execute("BEGIN IMMEDIATE")
         inserted = db.execute(
             "INSERT OR IGNORE INTO processed_subscription_events (provider, event_id, processed_at) "
-            "VALUES ('paddle', ?, ?)", (event_id, now),
+            "VALUES (?, ?, ?)", (event_source, event_id, now),
         )
         if inserted.rowcount == 0:
             return False
