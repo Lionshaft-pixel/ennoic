@@ -77,6 +77,9 @@
             {% set plan_status_text = 'Ennoic Pro' if account.plan == 'pro' else 'Free Plan' %}
             {% set status_text = 'Active' if account.status == 'active' else 'Ends this billing period' if account.status == 'canceled' else 'Payment past due' if account.plan == 'pro' and account.status == 'past_due' else 'Free' %}
             <div class="plan-heading"><div><p class="panel-kicker" data-i18n="planAndUsage">PLAN AND USAGE</p><div class="plan-status-line" aria-live="polite"><h3 id="account-plan-name" data-i18n="{{ plan_label }}">{{ plan_status_text }}</h3><span class="plan-status-separator" id="account-plan-separator" aria-hidden="true" {% if account.plan != 'pro' %}hidden{% endif %}>·</span><span class="plan-pill" id="account-plan-status" data-i18n="{{ plan_status_label }}">{{ status_text }}</span></div></div></div>
+            <p class="subscription-loading" id="account-entitlements-loading" role="status" hidden>Loading plan details…</p>
+            <p class="settings-feedback" id="account-entitlements-error" role="status" aria-live="polite" hidden></p>
+            <button class="subscription-retry" id="account-entitlements-retry" type="button" hidden>Retry</button>
             <div class="ai-usage-block" aria-live="polite">
               <div class="ai-usage-heading"><span data-i18n="aiRequestUsage">AI requests used</span><strong id="account-ai-percent">0%</strong></div>
               <div class="usage-track" id="account-ai-progress" role="progressbar" aria-label="AI requests used" data-i18n-aria-label="aiRequestUsage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="account-ai-progress-fill"></span></div>

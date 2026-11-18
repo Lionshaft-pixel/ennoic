@@ -14,6 +14,7 @@
   <script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/lib/marked.umd.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js" defer></script>
   <script src="/static/i18n.js" defer></script>
+  <script src="/static/subscription-ui.js" defer></script>
   <script src="/static/script.js" defer></script>
 </head>
 <body>
@@ -56,7 +57,9 @@
     <main class="main">
       <header class="top">
         <button class="btn restore-tasks" id="restore-tasks" type="button" aria-controls="task-dashboard" aria-expanded="true" data-i18n="yourTasks">Your tasks</button>
-        <a class="btn primary" id="app-upgrade" href="/checkout" data-i18n="upgrade">Upgrade</a>
+        <span class="subscription-loading" id="app-entitlements-loading" role="status">Loading plan…</span>
+        <a class="btn primary" id="app-upgrade" href="/pricing" data-i18n="upgrade" hidden>Upgrade</a>
+        <button class="subscription-retry" id="app-entitlements-retry" type="button" hidden>Retry</button>
       </header>
 
       <div class="workspace-grid" id="workspace-grid">

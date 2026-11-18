@@ -580,18 +580,8 @@ def refund_policy_page():
 
 
 @app.route("/checkout")
-@login_required
 def checkout_page():
-    g.checkout_csp_nonce = secrets.token_urlsafe(18)
-    currency = _price_currency()
-    return render_template(
-        "checkout.html",
-        user=current_user,
-        contact=account_store.get_checkout_contact(current_user.id),
-        selected_price=entitlements.pro_prices()[currency],
-        csrf_token=generate_csrf(),
-        csp_nonce=g.checkout_csp_nonce,
-    )
+    return redirect(url_for("pricing_page"))
 
 
 @app.route("/api/checkout/contact", methods=["POST"])

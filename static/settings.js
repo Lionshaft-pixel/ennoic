@@ -47,13 +47,24 @@
     if (section === "account") loadPlan();
   }
 
+  let planRequestId = 0;
   async function loadPlan() {
+    const requestId = ++planRequestId;
     const status = $("account-plan-status");
-    status.textContent = t("loadingSettings");
+    const loading = $("account-entitlements-loading");
+    const errorMessage = $("account-entitlements-error");
+    const retry = $("account-entitlements-retry");
+    const upgradePrompt = $("account-upgrade-prompt");
+    upgradePrompt.hidden = true;
+    loading.hidden = false;
+    errorMessage.hidden = true;
+    retry.hidden = true;
     try {
       const response = await fetch("/api/entitlements", { credentials: "same-origin" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || t("planLoadFailed"));
+      if (!data || (data.plan !== "free" && data.plan !== "pro")) throw new Error(t("planLoadFailed"));
+      if (requestId !== planRequestId) return;
       const pro = data.plan === "pro";
       $("account-plan-name").dataset.i18n = pro ? "ennoicPro" : "freePlan";
       $("account-plan-name").textContent = t(pro ? "ennoicPro" : "freePlan");
@@ -77,11 +88,18 @@
         ? ""
         : new Intl.DateTimeFormat(language, { dateStyle: "medium" }).format(resetDate);
       $("account-ai-reset").textContent = resetLabel ? t("usageResetsAt", { date: resetLabel }) : "";
-      $("account-upgrade-prompt").hidden = data.plan !== "free";
+      upgradePrompt.hidden = data.plan !== "free";
+      loading.hidden = true;
     } catch (error) {
-      status.textContent = error.message || t("planLoadFailed");
+      if (requestId !== planRequestId) return;
+      loading.hidden = true;
+      errorMessage.textContent = error.message || t("planLoadFailed");
+      errorMessage.hidden = false;
+      retry.hidden = false;
     }
   }
+
+  $("account-entitlements-retry").addEventListener("click", loadPlan);
 
   async function postJSON(url, body) {
     const response = await fetch(url, {

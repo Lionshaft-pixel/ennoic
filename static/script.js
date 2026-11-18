@@ -1146,13 +1146,18 @@ function startNewChat() {
 els.newChat.addEventListener("click", startNewChat);
 els.search.addEventListener("input", renderHistory);
 els.openSettings.addEventListener("click", () => window.location.assign("/settings"));
-requestJSON("/api/entitlements")
-  .then((account) => {
-    els.upgrade.hidden = account.plan !== "free";
-    const proBadge = $("account-pro-badge");
-    if (proBadge) proBadge.hidden = account.plan !== "pro";
-  })
-  .catch(() => {});
+const subscriptionView = EnnoicSubscriptionUI.createSubscriptionView({
+  upgrade: els.upgrade,
+  loading: $("app-entitlements-loading"),
+  retry: $("app-entitlements-retry"),
+  badge: $("account-pro-badge"),
+  fetchEntitlements: () => requestJSON("/api/entitlements"),
+});
+$("app-entitlements-retry").addEventListener("click", subscriptionView.refresh);
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) subscriptionView.refresh();
+});
+subscriptionView.refresh();
 
 /* ---------- Start ---------- */
 EnnoicI18n.applyTranslations(language);

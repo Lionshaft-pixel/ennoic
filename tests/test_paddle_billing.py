@@ -103,6 +103,25 @@ class PaddleBillingTests(unittest.TestCase):
         self.assertIn("Ennoic Pro</h3>", refreshed_settings)
         self.assertIn(">Active</span>", refreshed_settings)
 
+    def test_upgrade_controls_start_hidden_until_entitlements_are_known(self):
+        client = app_module.app.test_client()
+        client.post("/auth/login", data={"email": self.user["email"], "password": "correct-horse-battery-7"})
+        home = client.get("/").get_data(as_text=True)
+        self.assertRegex(home, r'id="app-upgrade"[^>]*hidden')
+        self.assertIn('id="app-entitlements-loading" role="status"', home)
+        self.assertIn('id="app-entitlements-retry" type="button" hidden', home)
+
+        pricing = client.get("/pricing").get_data(as_text=True)
+        self.assertRegex(pricing, r'id="upgrade"[^>]*hidden')
+        self.assertIn('id="entitlements-retry" type="button" hidden', pricing)
+        legacy_checkout = client.get("/checkout")
+        self.assertEqual(legacy_checkout.status_code, 302)
+        self.assertEqual(legacy_checkout.headers["Location"], "/pricing")
+
+        settings = client.get("/settings").get_data(as_text=True)
+        self.assertIn('id="account-entitlements-retry" type="button" hidden', settings)
+        self.assertRegex(settings, r'id="account-upgrade-prompt" hidden')
+
     def test_active_subscription_grants_pro_only_from_verified_subscription_event(self):
         token = account_store.create_paddle_checkout_intent(
             self.user["id"], "sandbox", "pri_sandbox_monthly"

@@ -106,7 +106,9 @@ li svg{flex:none;margin-top:2px}
         </div>
         <p class="sub" id="price-sub">&nbsp;</p>
         <ul id="pro-features"></ul>
-        <button class="btn main" id="upgrade" type="button" disabled>Upgrade to Pro</button>
+        <span class="sub" id="entitlements-loading" role="status" {% if not authenticated %}hidden{% endif %}>Loading plan…</span>
+        <button class="btn main" id="upgrade" type="button" disabled {% if authenticated %}hidden{% endif %}>Upgrade to Pro</button>
+        <button class="btn ghost" id="entitlements-retry" type="button" hidden>Retry</button>
       </section>
     </div>
     <div class="account-summary" id="account-summary" hidden aria-live="polite"></div>
@@ -145,6 +147,16 @@ var $ = function (id) { return document.getElementById(id); };
 var pricing = null;
 var authenticated = {{ authenticated|tojson }};
 var paddleReady = false;
+var entitlementState = authenticated ? 'loading' : 'anonymous';
+var entitlementRequest = 0;
+
+function updateUpgradeControl() {
+  var button = $('upgrade');
+  button.hidden = authenticated && entitlementState !== 'free';
+  $('entitlements-loading').hidden = !authenticated || entitlementState !== 'loading';
+  $('entitlements-retry').hidden = entitlementState !== 'failed';
+  button.disabled = !pricing || !pricing.checkout_available || !paddleReady;
+}
 
 function setMsg(message) { $('msg').textContent = message || ''; }
 
@@ -169,7 +181,7 @@ function render() {
   var selectedPrice = pricing.selected_price || pricing.prices[pricing.selected_currency || 'USD'];
   $('price-amount').textContent = selectedPrice.display;
   $('price-per').textContent = copy.per_month;
-  $('upgrade').disabled = !pricing.checkout_available;
+  updateUpgradeControl();
   if (pricing.checkout_available && !window.Paddle) {
     $('upgrade').disabled = true;
     setMsg('Paddle checkout could not be loaded. Please try again later.');
@@ -179,6 +191,7 @@ function render() {
       if (pricing.paddle.environment === 'sandbox') Paddle.Environment.set('sandbox');
       Paddle.Initialize({ token: pricing.paddle.client_token });
       paddleReady = true;
+      updateUpgradeControl();
       Paddle.PricePreview({ items: [{ priceId: pricing.paddle.price_id, quantity: 1 }] })
         .then(function (preview) {
           var lineItems = preview && preview.data && preview.data.details && preview.data.details.lineItems;
@@ -190,7 +203,7 @@ function render() {
         })
         .catch(function () { $('price-amount').textContent = ''; setMsg('Localized price unavailable. Please try again.'); });
     } catch (_) {
-      $('upgrade').disabled = true;
+      updateUpgradeControl();
       setMsg('Paddle checkout could not be initialized. Please try again later.');
     }
   }
@@ -218,11 +231,19 @@ function load() {
     .then(function () { clearTimeout(timer); });
 }
 
-fetch('/api/entitlements', { credentials: 'same-origin' }).then(function (r) {
-  if (!r.ok) return null;
-  return r.json();
-}).then(function (account) {
-  if (!account) return;
+function loadEntitlements() {
+  if (!authenticated) return;
+  var requestId = ++entitlementRequest;
+  entitlementState = 'loading';
+  updateUpgradeControl();
+  fetch('/api/entitlements', { credentials: 'same-origin' }).then(function (r) {
+    if (!r.ok) throw new Error('Could not load your plan.');
+    return r.json();
+  }).then(function (account) {
+    if (requestId !== entitlementRequest) return;
+    if (!account || (account.plan !== 'free' && account.plan !== 'pro')) throw new Error('Invalid plan response.');
+    entitlementState = account.plan === 'pro' ? 'pro' : 'free';
+    updateUpgradeControl();
   var language = 'en';
   try { language = localStorage.getItem('ennoic-mind:language') || 'en'; } catch (_) {}
   fetch('/api/pricing?lang=' + encodeURIComponent(language)).then(function (r) { return r.json(); }).then(function (p) {
@@ -236,15 +257,21 @@ fetch('/api/entitlements', { credentials: 'same-origin' }).then(function (r) {
       copy.usage_ai.replace('{used}', usage.ai_requests.used).replace('{limit}', usage.ai_requests.limit) + ' · ' +
       copy.usage_memory.replace('{used}', usage.memories.used).replace('{limit}', usage.memories.limit) + ' · ' + history;
     $('account-summary').hidden = false;
-    if (account.plan === 'pro') {
-      $('upgrade').disabled = true;
-      $('upgrade').textContent = copy.current_plan;
-    }
-  }).catch(function () {});
-}).catch(function () {});
+    }).catch(function () {});
+  }).catch(function () {
+    if (requestId !== entitlementRequest) return;
+    entitlementState = 'failed';
+    updateUpgradeControl();
+    setMsg('Your plan could not be loaded. Please retry.');
+  });
+}
+$('entitlements-retry').addEventListener('click', loadEntitlements);
+window.addEventListener('pageshow', function (event) { if (event.persisted) loadEntitlements(); });
+loadEntitlements();
 
 $('upgrade').onclick = function () {
   if (!authenticated) { window.location.assign('/login'); return; }
+  if (entitlementState !== 'free') return;
   if (!pricing || !pricing.checkout_available || !paddleReady) return;
   $('upgrade').disabled = true;
   setMsg('Preparing secure checkout…');
