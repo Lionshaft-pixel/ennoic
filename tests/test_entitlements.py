@@ -187,24 +187,26 @@ class EntitlementTests(unittest.TestCase):
         self.assertTrue(all("automation runs" not in item.lower() for item in spanish["features"]["pro"]))
         self.assertTrue(all("file" not in item.lower() for item in spanish["features"]["pro"]))
 
-    def test_india_pricing_shows_collapsible_upi_notice_only_for_inr_region(self):
+    def test_pricing_page_loads_notice_hidden_until_existing_region_data_resolves(self):
         client = app.app.test_client()
-        with patch.object(app, "_price_currency", return_value="INR"):
-            india_page = client.get("/pricing").get_data(as_text=True)
-        with patch.object(app, "_price_currency", return_value="USD"):
-            international_page = client.get("/pricing").get_data(as_text=True)
+        page = client.get("/pricing").get_data(as_text=True)
+        india_pricing = client.get("/api/pricing", headers={"Accept-Language": "en-IN,en;q=0.9"}).get_json()
+        international_pricing = client.get(
+            "/api/pricing", headers={"Accept-Language": "en-US,en;q=0.9"}
+        ).get_json()
 
-        self.assertIn('<details class="upi-notice" id="india-upi-autopay-notice">', india_page)
-        self.assertIn("₹179/month with UPI AutoPay", india_page)
+        self.assertIn('<details class="upi-notice" id="india-upi-autopay-notice" hidden>', page)
+        self.assertIn("₹179/month with UPI AutoPay", page)
         self.assertIn(
             "Your subscription is ₹179/month. UPI payments are processed by Paddle. "
             "Your UPI app may display 'Paddlecom' and a maximum authorization limit of ₹15,000. "
             "This is not an upfront ₹15,000 charge.",
-            india_page,
+            page,
         )
-        self.assertLess(india_page.index('id="upgrade"'), india_page.index('id="india-upi-autopay-notice"'))
-        self.assertNotIn("india-upi-autopay-notice", international_page)
-        self.assertNotIn("Paddlecom", international_page)
+        self.assertLess(page.index('id="upgrade"'), page.index('id="india-upi-autopay-notice"'))
+        self.assertIn("/static/pricing-region.js", page)
+        self.assertEqual(india_pricing["selected_currency"], "INR")
+        self.assertEqual(international_pricing["selected_currency"], "USD")
 
     def test_verified_provider_event_grants_configured_pro_entitlements(self):
         user = self.create_user()

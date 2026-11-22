@@ -115,13 +115,11 @@ li svg{flex:none;margin-top:2px}
         <ul id="pro-features"></ul>
         <span class="sub" id="entitlements-loading" role="status" {% if not authenticated %}hidden{% endif %}>Loading plan…</span>
         <button class="btn main" id="upgrade" type="button" disabled {% if authenticated %}hidden{% endif %}>Upgrade to Pro</button>
-        {% if selected_currency == 'INR' %}
         <!-- Temporary India UPI AutoPay notice; remove when Razorpay is available for Indian customers. -->
-        <details class="upi-notice" id="india-upi-autopay-notice">
+        <details class="upi-notice" id="india-upi-autopay-notice" hidden>
           <summary>₹179/month with UPI AutoPay; ₹15,000 is an authorization limit, not an upfront charge.</summary>
           <p>Your subscription is ₹179/month. UPI payments are processed by Paddle. Your UPI app may display 'Paddlecom' and a maximum authorization limit of ₹15,000. This is not an upfront ₹15,000 charge.</p>
         </details>
-        {% endif %}
         <button class="btn ghost" id="entitlements-retry" type="button" hidden>Retry</button>
       </section>
     </div>
@@ -140,6 +138,7 @@ li svg{flex:none;margin-top:2px}
 </footer>
 
 <script src="https://cdn.paddle.com/paddle/v2/paddle.js" nonce="{{ csp_nonce }}"></script>
+<script src="{{ url_for('static', filename='pricing-region.js') }}"></script>
 
 <script nonce="{{ csp_nonce }}">
 var CHECK = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f6e73b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
@@ -174,6 +173,13 @@ function updateUpgradeControl() {
 
 function setMsg(message) { $('msg').textContent = message || ''; }
 
+function updateIndiaUpiNotice(preview) {
+  var region = window.EnnoicPricingRegion;
+  $('india-upi-autopay-notice').hidden = !region.isIndiaPricing(
+    pricing ? pricing.selected_currency : '', preview
+  );
+}
+
 function render() {
   var copy = pricing.copy;
   $('pricing-title').textContent = copy.title;
@@ -195,6 +201,7 @@ function render() {
   var selectedPrice = pricing.selected_price || pricing.prices[pricing.selected_currency || 'USD'];
   $('price-amount').textContent = selectedPrice.display;
   $('price-per').textContent = copy.per_month;
+  updateIndiaUpiNotice(null);
   updateUpgradeControl();
   if (pricing.checkout_available && !window.Paddle) {
     $('upgrade').disabled = true;
@@ -208,6 +215,7 @@ function render() {
       updateUpgradeControl();
       Paddle.PricePreview({ items: [{ priceId: pricing.paddle.price_id, quantity: 1 }] })
         .then(function (preview) {
+          updateIndiaUpiNotice(preview);
           var lineItems = preview && preview.data && preview.data.details && preview.data.details.lineItems;
           var line = lineItems && lineItems[0];
           var formatted = line && line.formattedTotals && line.formattedTotals.subtotal;

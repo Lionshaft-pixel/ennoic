@@ -559,7 +559,6 @@ def pricing_page():
         "pricing.html",
         csrf_token=generate_csrf() if current_user.is_authenticated else "",
         authenticated=current_user.is_authenticated,
-        selected_currency=_price_currency(),
         csp_nonce=g.pricing_csp_nonce,
     )
 
