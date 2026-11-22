@@ -15,7 +15,7 @@
 </head>
 <body>
   <a class="settings-skip" href="#settings-content" data-i18n="skipToSettings">Skip to settings</a>
-  <div class="settings-shell" id="settings-app" data-user-id="{{ user.id }}" data-user-email="{{ user.email }}">
+  <div class="settings-shell" id="settings-app" data-user-id="{{ user.id }}" data-user-email="{{ user.email }}" data-account-has-billing="{{ 'true' if account.provider in ['paddle', 'razorpay'] and account.status in ['active', 'past_due', 'canceled'] or account.provider == 'razorpay' and account.status == 'expired' else 'false' }}">
     <aside class="settings-sidebar" id="settings-sidebar" aria-label="Settings navigation" data-i18n-aria-label="settingsNavigation">
       <div class="settings-sidebar-top">
         <button class="sidebar-toggle" id="settings-sidebar-toggle" type="button" aria-label="Collapse sidebar" aria-expanded="true" data-i18n-aria-label="collapseSettingsSidebar">
@@ -103,7 +103,16 @@
               <p class="settings-feedback" id="password-feedback" role="status" aria-live="polite"></p>
             </form>
           </section>
-          <div class="danger-card"><div><h3 data-i18n="deleteAccount">Delete account</h3><p data-i18n="deleteAccountExplanation">Your account is disabled immediately. Its server data is permanently removed after 30 days. Sign in again during that period to restore it.</p></div><button class="settings-button danger-button" id="delete-account" type="button" data-i18n="deleteAccount">Delete account</button></div>
+          <div class="danger-card"><div><h3 data-i18n="deleteAccount">Delete account</h3>
+            {% if account.provider == 'razorpay' and account.status == 'expired' %}
+            <p data-i18n="deleteAccountPastSubscriptionExplanation">Ennoic has a previous Razorpay subscription record. Before scheduling deletion and before permanently removing your data, it will verify that the subscription cannot renew. If it cannot verify this because the provider is unavailable, permanent deletion may take longer.</p>
+            {% elif account.provider in ['paddle', 'razorpay'] and account.status in ['active', 'past_due', 'canceled'] %}
+            <p data-i18n="deleteAccountProExplanation">Ennoic will confirm cancellation with your payment provider before deletion and check again before permanently removing your data. An active subscription normally stops renewing at the end of its paid period; a past-due or paused subscription may stop sooner. Your account is disabled immediately. You can use remaining paid time only if you restore your account within 30 days. If Ennoic cannot verify cancellation because the provider is unavailable, permanent deletion may take longer. Deletion does not automatically refund charges.</p>
+            {% if account.period_end %}<p class="form-hint"><span data-i18n="subscriptionPaidThrough">Current paid period ends:</span> <time>{{ account.period_end[:10] }}</time></p>{% endif %}
+            {% else %}
+            <p data-i18n="deleteAccountExplanation">Your account is disabled immediately. Its server data is normally permanently removed after 30 days. If Ennoic cannot verify that a payment-provider subscription will stop renewing, deletion may take longer. Sign in during the first 30 days to restore it.</p>
+            {% endif %}
+          </div><button class="settings-button danger-button" id="delete-account" type="button" data-i18n="deleteAccount">Delete account</button></div>
           <p class="settings-feedback" id="account-feedback" role="status" aria-live="polite"></p>
           <form method="post" action="{{ url_for('logout') }}" id="settings-sign-out-form" class="account-signout-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

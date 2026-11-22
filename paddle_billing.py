@@ -8,6 +8,7 @@ import hmac
 import json
 import os
 import time
+from urllib.parse import quote
 
 import requests
 
@@ -325,6 +326,97 @@ class PaddleAPI:
             return general
         raise PaddleUnavailable("Paddle did not return a customer portal link.")
 
+    def _subscription_request(self, method, subscription_id, *, body=None):
+        if (not isinstance(subscription_id, str) or not subscription_id.startswith("sub_")
+                or not all(char.isascii() and (char.isalnum() or char == "_") for char in subscription_id)):
+            raise PaddleUnavailable("The stored Paddle subscription reference is invalid.")
+        try:
+            response = requests.request(
+                method,
+                f"{self.base_url}/subscriptions/{quote(subscription_id, safe='')}",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=body,
+                timeout=15,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except requests.RequestException as exc:
+            raise PaddleUnavailable("Could not verify or cancel the Paddle subscription.") from exc
+        except ValueError as exc:
+            raise PaddleUnavailable("Paddle returned an invalid subscription response.") from exc
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, dict) or data.get("id") != subscription_id:
+            raise PaddleUnavailable("Paddle returned an incomplete subscription response.")
+        return data
+
+    @staticmethod
+    def _confirmed_cancellation(subscription, subscription_id, expected_customer_id):
+        if subscription.get("id") != subscription_id:
+            return None
+        if (expected_customer_id and subscription.get("customer_id")
+                != expected_customer_id):
+            return None
+        status = subscription.get("status")
+        if status == "canceled":
+            return {"confirmed": True, "status": "canceled", "effective_at": subscription.get("canceled_at")}
+        scheduled = subscription.get("scheduled_change")
+        if (status in {"active", "past_due"} and isinstance(scheduled, dict)
+                and scheduled.get("action") == "cancel"
+                and isinstance(scheduled.get("effective_at"), str)):
+            return {
+                "confirmed": True,
+                "status": status,
+                "effective_at": scheduled["effective_at"],
+            }
+        return None
+
+    def ensure_subscription_canceled(self, subscription_id, *, expected_customer_id=None):
+        """Stop future renewals and return only after Paddle confirms the state."""
+        current = self._subscription_request("GET", subscription_id)
+        if (expected_customer_id
+                and current.get("customer_id") != expected_customer_id):
+            raise PaddleUnavailable("The Paddle subscription could not be verified for this account.")
+        confirmed = self._confirmed_cancellation(current, subscription_id, expected_customer_id)
+        if confirmed:
+            return confirmed
+
+        status = current.get("status")
+        if status not in {"active", "past_due", "paused", "pending", "trialing"}:
+            raise PaddleUnavailable("Paddle did not confirm a cancellable subscription state.")
+        effective_from = (
+            "immediately" if status in {"past_due", "paused", "pending", "trialing"}
+            else "next_billing_period"
+        )
+        try:
+            updated = self._subscription_request(
+                "POST", subscription_id, body={"effective_from": effective_from}
+            )
+        except PaddleUnavailable as cancel_error:
+            # The provider may have accepted the request before a timeout. Re-read
+            # its authoritative state before deciding the deletion must stop.
+            try:
+                current = self._subscription_request("GET", subscription_id)
+            except PaddleUnavailable:
+                raise cancel_error
+            confirmed = self._confirmed_cancellation(current, subscription_id, expected_customer_id)
+            if confirmed:
+                return confirmed
+            raise cancel_error
+
+        confirmed = self._confirmed_cancellation(updated, subscription_id, expected_customer_id)
+        if confirmed:
+            return confirmed
+        # A successful HTTP response is not sufficient unless its returned state
+        # shows the cancellation. A fresh read also handles provider-side races.
+        current = self._subscription_request("GET", subscription_id)
+        confirmed = self._confirmed_cancellation(current, subscription_id, expected_customer_id)
+        if confirmed:
+            return confirmed
+        raise PaddleUnavailable("Paddle did not confirm that the subscription will stop renewing.")
+
     def reconcile_account_subscription(self, *, user_id, email, expected_price_id):
         """Sync only Paddle subscriptions carrying this account's stored checkout token.
 
@@ -368,7 +460,7 @@ class PaddleAPI:
         for customer in matched_customers:
             subscriptions = get("/subscriptions", {
                 "customer_id": customer["id"],
-                "status": "active,canceled,past_due,paused",
+                "status": "active,canceled,past_due,paused,pending,trialing",
                 "per_page": 200,
             })
             for data in subscriptions:
@@ -385,7 +477,7 @@ class PaddleAPI:
                 if not intent or _item_price_id(data) != expected_price_id:
                     continue
                 status = data.get("status")
-                if status not in {"active", "past_due", "paused", "canceled"}:
+                if status not in {"active", "past_due", "paused", "canceled", "pending", "trialing"}:
                     continue
                 updated_at = data.get("updated_at") or data.get("created_at")
                 try:

@@ -171,7 +171,12 @@
   });
 
   $("delete-account").addEventListener("click", async (event) => {
-    if (!window.confirm(t("deleteAccountConfirm"))) return;
+    const confirmationMessage = app.dataset.accountHasBilling === "true"
+      ? (app.dataset.accountPlan === "free"
+        ? t("deleteAccountPastSubscriptionConfirm")
+        : t("deleteAccountProConfirm"))
+      : t("deleteAccountConfirm");
+    if (!window.confirm(confirmationMessage)) return;
     const typedEmail = window.prompt(t("deleteAccountPrompt", { email: app.dataset.userEmail }));
     if (typedEmail === null) return;
     const button = event.currentTarget;

@@ -10,6 +10,7 @@ from unittest.mock import Mock, patch
 
 import account_store
 import app as app_module
+import billing
 import entitlements
 import paddle_billing
 
@@ -74,6 +75,31 @@ class PaddleBillingTests(unittest.TestCase):
             "PADDLE_PRICE_ID_LIVE": "pri_live_monthly",
             "PADDLE_LIVE_CHECKOUT_ENABLED": checkout_enabled,
         }
+
+    def provision_active_subscription(self, *, scheduled_cancel_at=None):
+        token = account_store.create_paddle_checkout_intent(
+            self.user["id"], "sandbox", "pri_sandbox_monthly"
+        )
+        event = self.subscription_event(intent=token, scheduled_cancel_at=scheduled_cancel_at)
+        body, signature = self.signed(event)
+        self.assertTrue(paddle_billing.process_webhook(body, signature))
+        return event["data"]["id"]
+
+    @staticmethod
+    def paddle_api_response(data):
+        response = Mock()
+        response.json.return_value = {"data": data}
+        response.raise_for_status.return_value = None
+        return response
+
+    def authenticated_client(self):
+        client = app_module.app.test_client()
+        response = client.post(
+            "/auth/login",
+            data={"email": self.user["email"], "password": "correct-horse-battery-7"},
+        )
+        self.assertEqual(response.status_code, 302)
+        return client
 
     def test_signature_requires_exact_raw_body_and_recent_timestamp(self):
         event = self.subscription_event()
@@ -145,6 +171,587 @@ class PaddleBillingTests(unittest.TestCase):
         view = entitlements.account_entitlements(self.user["id"])
         self.assertEqual((view["plan"], view["provider"]), ("pro", "paddle"))
         self.assertEqual(entitlements.chat_limits(self.user["id"])["plan"], "pro")
+
+    def test_paid_account_deletion_cancels_with_paddle_before_disabling_account(self):
+        subscription_id = self.provision_active_subscription()
+        client = self.authenticated_client()
+        active = {
+            "id": subscription_id,
+            "customer_id": "ctm_paddle_test",
+            "status": "active",
+            "scheduled_change": None,
+        }
+        effective_at = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+        scheduled = {
+            **active,
+            "scheduled_change": {"action": "cancel", "effective_at": effective_at},
+        }
+
+        with patch("paddle_billing.requests.request") as no_request:
+            settings = client.get("/settings")
+            self.assertIn("remaining paid time", settings.get_data(as_text=True))
+            invalid = client.delete("/api/account", json={"email": "wrong@example.com"})
+            self.assertEqual(invalid.status_code, 400)
+            no_request.assert_not_called()
+
+        with patch("paddle_billing.requests.request", side_effect=[
+            self.paddle_api_response(active),
+            self.paddle_api_response(scheduled),
+        ]) as provider_request:
+            response = client.delete("/api/account", json={"email": self.user["email"]})
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(provider_request.call_count, 2)
+        self.assertEqual(provider_request.call_args_list[0].args[0], "GET")
+        self.assertEqual(provider_request.call_args_list[1].args[0], "POST")
+        self.assertEqual(provider_request.call_args_list[1].kwargs["json"], {
+            "effective_from": "next_billing_period",
+        })
+        stored_user = account_store.get_user(self.user["id"])
+        self.assertIsNotNone(stored_user["deleted_at"])
+        stored_subscription = account_store.get_paddle_subscription(self.user["id"], "sandbox")
+        self.assertEqual(stored_subscription["status"], "canceled")
+        self.assertEqual(stored_subscription["cancel_at"], effective_at)
+
+    def test_paddle_subscription_longer_than_grace_is_canceled_before_purge(self):
+        subscription_id = self.provision_active_subscription()
+        client = self.authenticated_client()
+        effective_at = (datetime.now(timezone.utc) + timedelta(days=45)).isoformat()
+        active = {
+            "id": subscription_id,
+            "customer_id": "ctm_paddle_test",
+            "status": "active",
+            "scheduled_change": None,
+        }
+        scheduled = {
+            **active,
+            "scheduled_change": {"action": "cancel", "effective_at": effective_at},
+        }
+        with patch("paddle_billing.requests.request", side_effect=[
+            self.paddle_api_response(active), self.paddle_api_response(scheduled),
+        ]):
+            response = client.delete("/api/account", json={"email": self.user["email"]})
+        self.assertEqual(response.status_code, 202)
+        stored = account_store.get_paddle_subscription(self.user["id"], "sandbox")
+        self.assertEqual(stored["status"], "canceled")
+        self.assertEqual(stored["cancel_at"], effective_at)
+
+        # A scheduled cancellation is not mistaken for an ended subscription:
+        # Pro remains available through the provider-confirmed effective date.
+        self.assertEqual(entitlements.account_subscription_status(self.user["id"])["status"], "canceled")
+        self.assertEqual(entitlements.account_entitlements(self.user["id"])["plan"], "pro")
+        with account_store.connection() as db:
+            db.execute(
+                "UPDATE users SET purge_after = ? WHERE id = ?",
+                ((datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(), self.user["id"]),
+            )
+        with patch("paddle_billing.requests.request", return_value=self.paddle_api_response(scheduled)):
+            self.assertEqual(app_module._purge_due_account_deletions(), 1)
+
+    def test_deletion_reconciles_subscription_when_paddle_webhook_is_delayed(self):
+        token = account_store.create_paddle_checkout_intent(
+            self.user["id"], "sandbox", "pri_sandbox_monthly"
+        )
+        client = self.authenticated_client()
+        now = datetime.now(timezone.utc)
+        effective_at = (now + timedelta(days=45)).isoformat()
+        paddle_subscription = {
+            "id": "sub_delayed_webhook",
+            "customer_id": "ctm_paddle_test",
+            "status": "active",
+            "items": [{"price": {"id": "pri_sandbox_monthly"}, "quantity": 1}],
+            "current_billing_period": {
+                "starts_at": now.isoformat(),
+                "ends_at": effective_at,
+            },
+            "updated_at": now.isoformat(),
+            "custom_data": {"ennoic_checkout_intent": token},
+            "scheduled_change": None,
+        }
+        scheduled = {
+            **paddle_subscription,
+            "scheduled_change": {"action": "cancel", "effective_at": effective_at},
+        }
+        with patch("paddle_billing.requests.get", side_effect=[
+            self.paddle_api_response([{"id": "ctm_paddle_test", "email": self.user["email"]}]),
+            self.paddle_api_response([paddle_subscription]),
+        ]) as reconcile_request, patch("paddle_billing.requests.request", side_effect=[
+            self.paddle_api_response(paddle_subscription),
+            self.paddle_api_response(scheduled),
+        ]) as cancellation_request:
+            response = client.delete("/api/account", json={"email": self.user["email"]})
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(reconcile_request.call_count, 2)
+        self.assertEqual(cancellation_request.call_count, 2)
+        self.assertEqual(
+            account_store.get_paddle_subscription(self.user["id"], "sandbox")["status"],
+            "canceled",
+        )
+
+    def test_provider_outage_at_purge_defers_permanent_deletion(self):
+        subscription_id = self.provision_active_subscription()
+        client = self.authenticated_client()
+        active = {
+            "id": subscription_id,
+            "customer_id": "ctm_paddle_test",
+            "status": "active",
+            "scheduled_change": None,
+        }
+        scheduled = {
+            **active,
+            "scheduled_change": {
+                "action": "cancel",
+                "effective_at": (datetime.now(timezone.utc) + timedelta(days=45)).isoformat(),
+            },
+        }
+        with patch("paddle_billing.requests.request", side_effect=[
+            self.paddle_api_response(active), self.paddle_api_response(scheduled),
+        ]):
+            self.assertEqual(client.delete("/api/account", json={"email": self.user["email"]}).status_code, 202)
+        with account_store.connection() as db:
+            db.execute(
+                "UPDATE users SET purge_after = ? WHERE id = ?",
+                ((datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(), self.user["id"]),
+            )
+
+        with patch(
+            "paddle_billing.requests.request",
+            side_effect=paddle_billing.requests.Timeout("simulated provider outage"),
+        ):
+            self.assertEqual(app_module._purge_due_account_deletions(), 0)
+        self.assertIsNotNone(account_store.get_user(self.user["id"]))
+
+    def test_purge_reapplies_provider_cancellation_if_schedule_was_removed(self):
+        subscription_id = self.provision_active_subscription()
+        client = self.authenticated_client()
+        active = {
+            "id": subscription_id,
+            "customer_id": "ctm_paddle_test",
+            "status": "active",
+            "scheduled_change": None,
+        }
+        scheduled = {
+            **active,
+            "scheduled_change": {
+                "action": "cancel",
+                "effective_at": (datetime.now(timezone.utc) + timedelta(days=45)).isoformat(),
+            },
+        }
+        with patch("paddle_billing.requests.request", side_effect=[
+            self.paddle_api_response(active), self.paddle_api_response(scheduled),
+        ]):
+            self.assertEqual(client.delete("/api/account", json={"email": self.user["email"]}).status_code, 202)
+        with account_store.connection() as db:
+            db.execute(
+                "UPDATE users SET purge_after = ? WHERE id = ?",
+                ((datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(), self.user["id"]),
+            )
+
+        # The customer's/provider-side scheduled cancellation was removed. The
+        # purge worker must schedule it again and verify it before erasing data.
+        with patch("paddle_billing.requests.request", side_effect=[
+            self.paddle_api_response(active),
+            self.paddle_api_response(scheduled),
+        ]) as provider_request:
+            self.assertEqual(app_module._purge_due_account_deletions(), 1)
+        self.assertEqual([call.args[0] for call in provider_request.call_args_list], ["GET", "POST"])
+
+    def test_restoring_paddle_account_shows_scheduled_cancellation(self):
+        subscription_id = self.provision_active_subscription()
+        client = self.authenticated_client()
+        effective_at = (datetime.now(timezone.utc) + timedelta(days=45)).isoformat()
+        active = {
+            "id": subscription_id,
+            "customer_id": "ctm_paddle_test",
+            "status": "active",
+            "scheduled_change": None,
+        }
+        scheduled = {
+            **active,
+            "scheduled_change": {"action": "cancel", "effective_at": effective_at},
+        }
+        with patch("paddle_billing.requests.request", side_effect=[
+            self.paddle_api_response(active), self.paddle_api_response(scheduled),
+        ]):
+            deletion = client.delete("/api/account", json={"email": self.user["email"]})
+        self.assertEqual(deletion.status_code, 202)
+        restored = client.post(
+            "/auth/login",
+            data={"email": self.user["email"], "password": "correct-horse-battery-7"},
+        )
+        self.assertEqual(restored.status_code, 302)
+        entitlement_response = client.get("/api/entitlements").get_json()
+        self.assertEqual((entitlement_response["plan"], entitlement_response["status"]), ("pro", "canceled"))
+        settings = client.get("/settings").get_data(as_text=True)
+        self.assertIn("Ends this billing period", settings)
+
+    def test_provider_cancellation_failure_keeps_account_enabled_and_retryable(self):
+        subscription_id = self.provision_active_subscription()
+        client = self.authenticated_client()
+        active = {
+            "id": subscription_id,
+            "customer_id": "ctm_paddle_test",
+            "status": "active",
+            "scheduled_change": None,
+        }
+
+        with patch("paddle_billing.requests.request", side_effect=[
+            self.paddle_api_response(active),
+            paddle_billing.requests.Timeout("simulated timeout"),
+            self.paddle_api_response(active),
+        ]):
+            response = client.delete("/api/account", json={"email": self.user["email"]})
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("was not scheduled for deletion", response.get_json()["error"])
+        self.assertIsNone(account_store.get_user(self.user["id"])["deleted_at"])
+        self.assertIsNone(account_store.get_scheduled_deletion(self.user["id"]))
+        self.assertEqual(client.get("/api/entitlements").status_code, 200)
+        self.assertEqual(entitlements.account_entitlements(self.user["id"])["plan"], "pro")
+
+    def test_already_scheduled_paddle_cancellation_is_verified_without_reposting(self):
+        effective_at = (datetime.now(timezone.utc) + timedelta(days=18)).isoformat()
+        subscription_id = self.provision_active_subscription(scheduled_cancel_at=effective_at)
+        client = self.authenticated_client()
+        provider_state = {
+            "id": subscription_id,
+            "customer_id": "ctm_paddle_test",
+            "status": "active",
+            "scheduled_change": {"action": "cancel", "effective_at": effective_at},
+        }
+
+        with patch("paddle_billing.requests.request", return_value=self.paddle_api_response(provider_state)) as provider_request:
+            response = client.delete("/api/account", json={"email": self.user["email"]})
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(provider_request.call_count, 1)
+        self.assertEqual(provider_request.call_args.args[0], "GET")
+        self.assertIsNotNone(account_store.get_user(self.user["id"])["deleted_at"])
+
+    def test_already_canceled_paddle_subscription_is_confirmed_without_reposting(self):
+        subscription_id = self.provision_active_subscription()
+        client = self.authenticated_client()
+        provider_state = {
+            "id": subscription_id,
+            "customer_id": "ctm_paddle_test",
+            "status": "canceled",
+            "canceled_at": datetime.now(timezone.utc).isoformat(),
+            "scheduled_change": None,
+        }
+
+        with patch("paddle_billing.requests.request", return_value=self.paddle_api_response(provider_state)) as provider_request:
+            response = client.delete("/api/account", json={"email": self.user["email"]})
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(provider_request.call_count, 1)
+        self.assertEqual(provider_request.call_args.args[0], "GET")
+
+    def test_paddle_success_response_without_cancel_state_is_not_accepted(self):
+        subscription_id = "sub_cancel_not_confirmed"
+        active = {"id": subscription_id, "customer_id": "ctm_paddle_test",
+                  "status": "active", "scheduled_change": None}
+        with patch("paddle_billing.requests.request", side_effect=[
+            self.paddle_api_response(active),
+            self.paddle_api_response(active),
+            self.paddle_api_response(active),
+        ]):
+            with self.assertRaises(paddle_billing.PaddleUnavailable):
+                paddle_billing.PaddleAPI().ensure_subscription_canceled(
+                    subscription_id, expected_customer_id="ctm_paddle_test"
+                )
+
+    def test_paddle_customer_mapping_mismatch_stops_before_cancel_request(self):
+        subscription_id = "sub_wrong_customer"
+        provider_state = {"id": subscription_id, "customer_id": "ctm_someone_else",
+                          "status": "active", "scheduled_change": None}
+        with patch("paddle_billing.requests.request", return_value=self.paddle_api_response(provider_state)) as provider_request:
+            with self.assertRaises(paddle_billing.PaddleUnavailable):
+                paddle_billing.PaddleAPI().ensure_subscription_canceled(
+                    subscription_id, expected_customer_id="ctm_paddle_test"
+                )
+        self.assertEqual(provider_request.call_count, 1)
+        self.assertEqual(provider_request.call_args.args[0], "GET")
+
+    def test_paddle_timeout_after_cancel_is_recovered_from_provider_state(self):
+        subscription_id = "sub_cancel_timeout_recovered"
+        active = {"id": subscription_id, "customer_id": "ctm_paddle_test",
+                  "status": "active", "scheduled_change": None}
+        scheduled = {
+            **active,
+            "scheduled_change": {
+                "action": "cancel",
+                "effective_at": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
+            },
+        }
+        with patch("paddle_billing.requests.request", side_effect=[
+            self.paddle_api_response(active),
+            paddle_billing.requests.Timeout("simulated response timeout"),
+            self.paddle_api_response(scheduled),
+        ]) as provider_request:
+            result = paddle_billing.PaddleAPI().ensure_subscription_canceled(
+                subscription_id, expected_customer_id="ctm_paddle_test"
+            )
+        self.assertTrue(result["confirmed"])
+        self.assertEqual([call.args[0] for call in provider_request.call_args_list], ["GET", "POST", "GET"])
+
+    def test_repeated_deletion_request_checks_paddle_state_and_does_not_cancel_twice(self):
+        subscription_id = self.provision_active_subscription()
+        client = self.authenticated_client()
+        active = {
+            "id": subscription_id,
+            "customer_id": "ctm_paddle_test",
+            "status": "active",
+            "scheduled_change": None,
+        }
+        scheduled = {
+            **active,
+            "scheduled_change": {
+                "action": "cancel",
+                "effective_at": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
+            },
+        }
+        schedule_deletion = account_store.schedule_user_deletion
+        with patch("paddle_billing.requests.request", side_effect=[
+            self.paddle_api_response(active),
+            self.paddle_api_response(scheduled),
+            self.paddle_api_response(scheduled),
+        ]) as provider_request, patch.object(
+            account_store, "schedule_user_deletion", wraps=schedule_deletion
+        ) as schedule_call:
+            first = client.delete("/api/account", json={"email": self.user["email"]})
+            second = client.delete("/api/account", json={"email": self.user["email"]})
+
+        self.assertEqual((first.status_code, second.status_code), (202, 202))
+        self.assertEqual([call.args[0] for call in provider_request.call_args_list], ["GET", "POST", "GET"])
+        self.assertEqual(schedule_call.call_count, 1)
+
+    def test_provider_confirmation_survives_database_failure_and_retry(self):
+        subscription_id = self.provision_active_subscription()
+        client = self.authenticated_client()
+        active = {
+            "id": subscription_id,
+            "customer_id": "ctm_paddle_test",
+            "status": "active",
+            "scheduled_change": None,
+        }
+        scheduled = {
+            **active,
+            "scheduled_change": {
+                "action": "cancel",
+                "effective_at": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
+            },
+        }
+        with patch("paddle_billing.requests.request", side_effect=[
+            self.paddle_api_response(active),
+            self.paddle_api_response(scheduled),
+            self.paddle_api_response(scheduled),
+        ]) as provider_request:
+            with patch.object(
+                account_store,
+                "schedule_user_deletion",
+                side_effect=RuntimeError("simulated database failure"),
+            ):
+                failed = client.delete("/api/account", json={"email": self.user["email"]})
+            self.assertEqual(failed.status_code, 503)
+            self.assertIsNone(account_store.get_user(self.user["id"])["deleted_at"])
+            retried = client.delete("/api/account", json={"email": self.user["email"]})
+
+        self.assertEqual(retried.status_code, 202)
+        self.assertEqual([call.args[0] for call in provider_request.call_args_list], ["GET", "POST", "GET"])
+
+    def test_razorpay_deletion_cancellation_uses_cycle_end_and_requires_provider_confirmation(self):
+        provider = billing.RazorpaySubscriptionProvider()
+        subscription_id = "sub_razorpay_test"
+        current = {"id": subscription_id, "status": "active", "cancel_at_cycle_end": False,
+                   "notes": {"ennoic_user_id": self.user["id"]}}
+        scheduled = {"id": subscription_id, "status": "active", "cancel_at_cycle_end": True,
+                     "current_end": int(time.time()) + 86400,
+                     "notes": {"ennoic_user_id": self.user["id"]}}
+        with patch.object(provider, "_request", side_effect=[current, scheduled]) as provider_request:
+            result = provider.ensure_subscription_canceled(
+                subscription_id=subscription_id, expected_user_id=self.user["id"]
+            )
+        self.assertTrue(result["confirmed"])
+        self.assertEqual(provider_request.call_args_list[1].args[:2], (
+            "POST", f"/subscriptions/{subscription_id}/cancel"
+        ))
+        self.assertEqual(provider_request.call_args_list[1].kwargs["body"], {"cancel_at_cycle_end": 1})
+
+    def test_razorpay_past_due_subscription_reference_survives_and_is_canceled_on_deletion(self):
+        class TestRazorpayProvider:
+            name = "razorpay"
+
+            def verify_event(self, payload, signature):
+                return billing.VerifiedSubscriptionEvent(
+                    event_id="evt_razorpay_failed",
+                    user_id=self_user_id,
+                    event_type="payment_failed",
+                    subscription_id="sub_razorpay_past_due",
+                    period_start=None,
+                    period_end=(datetime.now(timezone.utc) + timedelta(days=5)).isoformat(),
+                )
+
+        self_user_id = self.user["id"]
+        service = billing.SubscriptionService(TestRazorpayProvider())
+        self.assertTrue(service.process_provider_event(b"verified", "signature"))
+        stored = account_store.get_account_subscription_for_deletion(self.user["id"])
+        self.assertEqual(stored["status"], "past_due")
+        self.assertEqual(stored["provider_subscription_id"], "sub_razorpay_past_due")
+
+        client = self.authenticated_client()
+        with patch.object(
+            billing.subscription_service,
+            "ensure_subscription_canceled",
+            return_value={
+                "confirmed": True,
+                "status": "active",
+                "effective_at": (datetime.now(timezone.utc) + timedelta(days=45)).isoformat(),
+            },
+        ) as cancel:
+            response = client.delete("/api/account", json={"email": self.user["email"]})
+        self.assertEqual(response.status_code, 202)
+        cancel.assert_called_once_with(
+            subscription_id="sub_razorpay_past_due", expected_user_id=self.user["id"]
+        )
+        stored = account_store.get_account_subscription_for_deletion(self.user["id"])
+        self.assertEqual(stored["status"], "canceled")
+        self.assertGreater(
+            datetime.fromisoformat(stored["period_end"]), datetime.now(timezone.utc)
+        )
+
+    def test_restoring_razorpay_account_shows_scheduled_cancellation(self):
+        effective_at = (datetime.now(timezone.utc) + timedelta(days=45)).isoformat()
+        with account_store.connection() as db:
+            db.execute(
+                "UPDATE account_subscriptions SET plan = 'pro', status = 'active', provider = 'razorpay', "
+                "provider_subscription_id = ?, period_end = ?, updated_at = ? WHERE user_id = ?",
+                ("sub_razorpay_restore", effective_at, datetime.now(timezone.utc).isoformat(), self.user["id"]),
+            )
+        client = self.authenticated_client()
+        with patch.object(
+            billing.subscription_service,
+            "ensure_subscription_canceled",
+            return_value={"confirmed": True, "status": "active", "effective_at": effective_at},
+        ):
+            deletion = client.delete("/api/account", json={"email": self.user["email"]})
+        self.assertEqual(deletion.status_code, 202)
+        stored = account_store.get_account_subscription_for_deletion(self.user["id"])
+        self.assertEqual(stored["status"], "canceled")
+
+        class DelayedRazorpayProvider:
+            name = "razorpay"
+
+            def verify_event(self, payload, signature):
+                return billing.VerifiedSubscriptionEvent(
+                    event_id="evt_delayed_pre_cancel_charge",
+                    user_id=self_user_id,
+                    event_type="renewed",
+                    subscription_id="sub_razorpay_restore",
+                    period_start=None,
+                    period_end=(datetime.now(timezone.utc) + timedelta(days=60)).isoformat(),
+                )
+
+        self_user_id = self.user["id"]
+        delayed_events = billing.SubscriptionService(DelayedRazorpayProvider())
+        self.assertTrue(delayed_events.process_provider_event(b"verified", "signature"))
+        stored = account_store.get_account_subscription_for_deletion(self.user["id"])
+        self.assertEqual(stored["status"], "canceled")
+        self.assertEqual(stored["period_end"], effective_at)
+
+        restored = client.post(
+            "/auth/login",
+            data={"email": self.user["email"], "password": "correct-horse-battery-7"},
+        )
+        self.assertEqual(restored.status_code, 302)
+        entitlement_response = client.get("/api/entitlements").get_json()
+        self.assertEqual((entitlement_response["plan"], entitlement_response["status"]), ("pro", "canceled"))
+
+    def test_locally_expired_razorpay_subscription_keeps_reference_for_deletion_check(self):
+        self_user_id = self.user["id"]
+        expired_period = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+
+        class TestRazorpayProvider:
+            name = "razorpay"
+
+            def verify_event(self, payload, signature):
+                return billing.VerifiedSubscriptionEvent(
+                    event_id="evt_razorpay_expired_locally",
+                    user_id=self_user_id,
+                    event_type="activated",
+                    subscription_id="sub_razorpay_expired_locally",
+                    period_start=None,
+                    period_end=expired_period,
+                )
+
+        service = billing.SubscriptionService(TestRazorpayProvider())
+        self.assertTrue(service.process_provider_event(b"verified", "signature"))
+        view = entitlements.account_subscription_status(self.user["id"])
+        self.assertEqual((view["plan"], view["status"]), ("free", "expired"))
+        stored = account_store.get_account_subscription_for_deletion(self.user["id"])
+        self.assertEqual(stored["provider_subscription_id"], "sub_razorpay_expired_locally")
+
+        client = self.authenticated_client()
+        settings = client.get("/settings").get_data(as_text=True)
+        self.assertIn("previous Razorpay subscription record", settings)
+        with patch.object(
+            billing.subscription_service,
+            "ensure_subscription_canceled",
+            return_value={"confirmed": True, "status": "completed"},
+        ) as cancel:
+            response = client.delete("/api/account", json={"email": self.user["email"]})
+        self.assertEqual(response.status_code, 202)
+        cancel.assert_called_once_with(
+            subscription_id="sub_razorpay_expired_locally", expected_user_id=self.user["id"]
+        )
+
+    def test_expired_razorpay_record_without_id_fails_closed(self):
+        with account_store.connection() as db:
+            db.execute(
+                "UPDATE account_subscriptions SET plan = 'free', status = 'expired', provider = 'razorpay', "
+                "provider_subscription_id = NULL, period_end = NULL WHERE user_id = ?",
+                (self.user["id"],),
+            )
+        client = self.authenticated_client()
+        with patch.object(billing.subscription_service, "ensure_subscription_canceled") as cancel:
+            response = client.delete("/api/account", json={"email": self.user["email"]})
+        self.assertEqual(response.status_code, 503)
+        self.assertIsNone(account_store.get_user(self.user["id"])["deleted_at"])
+        self.assertIn("remains available", response.get_json()["error"])
+        cancel.assert_not_called()
+
+    def test_account_purge_preserves_provider_transaction_ledger(self):
+        transaction_id = "txn_deletion_audit"
+        with account_store.connection() as db:
+            db.execute(
+                "INSERT INTO paddle_transactions (paddle_transaction_id, user_id, paddle_customer_id, "
+                "paddle_subscription_id, environment, status, price_id, last_event_at, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (transaction_id, self.user["id"], "ctm_paddle_test", "sub_paddle_test", "sandbox",
+                 "completed", "pri_sandbox_monthly", datetime.now(timezone.utc).isoformat(),
+                 datetime.now(timezone.utc).isoformat(), datetime.now(timezone.utc).isoformat()),
+            )
+        client = self.authenticated_client()
+        scheduled = client.delete("/api/account", json={"email": self.user["email"]})
+        self.assertEqual(scheduled.status_code, 202)
+        with account_store.connection() as db:
+            db.execute(
+                "UPDATE users SET purge_after = ? WHERE id = ?",
+                ((datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(), self.user["id"]),
+            )
+        self.assertEqual(
+            account_store.purge_due_deletions(verified_user_ids=[self.user["id"]]), 1
+        )
+        with account_store.connection() as db:
+            retained = db.execute(
+                "SELECT user_id, paddle_customer_id, paddle_subscription_id, status "
+                "FROM paddle_transactions WHERE paddle_transaction_id = ?",
+                (transaction_id,),
+            ).fetchone()
+        self.assertIsNone(retained["user_id"])
+        self.assertEqual(retained["paddle_customer_id"], "ctm_paddle_test")
+        self.assertEqual(retained["paddle_subscription_id"], "sub_paddle_test")
+        self.assertEqual(retained["status"], "completed")
 
     def test_delayed_signed_webhook_still_maps_expired_checkout_intent(self):
         token = account_store.create_paddle_checkout_intent(

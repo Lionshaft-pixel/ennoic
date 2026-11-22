@@ -482,7 +482,12 @@ def schedule_user_deletion(user_id, client_ip, *, grace_days=30, audit_retention
     account_ref = hashlib.sha256(user_id.encode("utf-8")).hexdigest()
     with connection() as db:
         db.execute("BEGIN IMMEDIATE")
-        row = db.execute("SELECT email, deleted_at, purge_after FROM users WHERE id = ?", (user_id,)).fetchone()
+        select_user = "SELECT email, deleted_at, purge_after FROM users WHERE id = ?"
+        if database_layer.uses_postgres():
+            # Serialize concurrent deletion confirmations so only one audit
+            # record and one deletion schedule are created for this account.
+            select_user += " FOR UPDATE"
+        row = db.execute(select_user, (user_id,)).fetchone()
         if row is None:
             return None
         if row["deleted_at"]:
@@ -540,14 +545,29 @@ def cancel_user_deletion(user_id):
     return cursor.rowcount == 1
 
 
-def purge_due_deletions(*, limit=25):
+def due_deletion_user_ids(*, limit=25):
+    with connection() as db:
+        rows = db.execute(
+            "SELECT id FROM users WHERE deleted_at IS NOT NULL AND purge_after <= ? LIMIT ?",
+            (_now(), limit),
+        ).fetchall()
+    return [row["id"] for row in rows]
+
+
+def purge_due_deletions(*, verified_user_ids, limit=25):
+    """Purge only accounts whose billing state the caller just re-verified."""
+    verified_user_ids = list(dict.fromkeys(verified_user_ids))
+    if not verified_user_ids:
+        return 0
     now = _now()
     purged = 0
     with connection() as db:
         db.execute("BEGIN IMMEDIATE")
+        placeholders = ", ".join("?" for _ in verified_user_ids)
         ids = [row["id"] for row in db.execute(
-            "SELECT id FROM users WHERE deleted_at IS NOT NULL AND purge_after <= ? LIMIT ?",
-            (now, limit),
+            "SELECT id FROM users WHERE deleted_at IS NOT NULL AND purge_after <= ? "
+            f"AND id IN ({placeholders}) LIMIT ?",
+            (now, *verified_user_ids, limit),
         ).fetchall()]
         for user_id in ids:
             account_ref = hashlib.sha256(user_id.encode("utf-8")).hexdigest()
@@ -858,16 +878,23 @@ def get_account_subscription(user_id, *, now=None):
             and not _timestamp_after(subscription["period_end"], now)
         ):
             db.execute(
-                "UPDATE account_subscriptions SET plan = 'free', status = 'expired', "
-                "provider_subscription_id = NULL, period_start = NULL, period_end = NULL, updated_at = ? "
+                "UPDATE account_subscriptions SET plan = 'free', status = 'expired', updated_at = ? "
                 "WHERE user_id = ?",
                 (now, user_id),
             )
-            subscription.update(
-                plan="free", status="expired", provider_subscription_id=None,
-                period_start=None, period_end=None, updated_at=now,
-            )
+            # Keep provider IDs and period metadata so account deletion can still
+            # verify that an apparently expired subscription is not renewing.
+            subscription.update(plan="free", status="expired", updated_at=now)
     return subscription
+
+
+def get_account_subscription_for_deletion(user_id):
+    """Return the stored provider subscription without expiring or mutating it."""
+    with connection() as db:
+        row = db.execute(
+            "SELECT * FROM account_subscriptions WHERE user_id = ?", (user_id,)
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def get_usage(user_id, meter, period_start):
@@ -996,6 +1023,17 @@ def apply_verified_subscription_event(*, provider, event_id, user_id, event_type
         )
         if cursor.rowcount == 0:
             return False
+        previous = db.execute(
+            "SELECT plan, status, provider, provider_subscription_id, period_start, period_end "
+            "FROM account_subscriptions WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        cancellation_was_confirmed = bool(
+            previous
+            and previous["status"] == "canceled"
+            and previous["provider"] == provider
+            and previous["provider_subscription_id"] == subscription_id
+        )
         if event_type in {"activated", "renewed"}:
             plan, status = "pro", "active"
         elif event_type == "canceled" and _timestamp_after(period_end, now):
@@ -1004,6 +1042,12 @@ def apply_verified_subscription_event(*, provider, event_id, user_id, event_type
             plan, status = "free", "past_due"
         else:
             plan, status = "free", "expired"
+        if cancellation_was_confirmed and event_type in {"activated", "renewed", "payment_failed"}:
+            # Razorpay events have no ordering guard in this store. A delayed
+            # pre-cancellation event must not make a provider-canceled account
+            # look renewable again after restoration.
+            plan, status = previous["plan"], "canceled"
+            period_start, period_end = previous["period_start"], previous["period_end"]
         db.execute(
             """
             INSERT INTO account_subscriptions (user_id, plan, status, provider, provider_subscription_id,
@@ -1013,8 +1057,10 @@ def apply_verified_subscription_event(*, provider, event_id, user_id, event_type
                 provider = excluded.provider, provider_subscription_id = excluded.provider_subscription_id,
                 period_start = excluded.period_start, period_end = excluded.period_end, updated_at = excluded.updated_at
             """,
-            (user_id, plan, status, provider, subscription_id if plan == "pro" else None,
-             period_start if plan == "pro" else None, period_end if plan == "pro" else None, now),
+            (user_id, plan, status, provider,
+             subscription_id if plan == "pro" or event_type == "payment_failed" else None,
+             period_start if plan == "pro" or event_type == "payment_failed" else None,
+             period_end if plan == "pro" or event_type == "payment_failed" else None, now),
         )
     return True
 
@@ -1280,6 +1326,63 @@ def get_paddle_subscription(user_id, environment, *, now=None):
     if latest["status"] in {"active", "past_due", "canceled"} and not _timestamp_after(effective_end, now):
         latest["status"] = "expired"
     return latest
+
+
+def get_paddle_subscriptions_for_deletion(user_id):
+    """Return potentially billable Paddle records across both isolated environments."""
+    now = _now()
+    with connection() as db:
+        rows = db.execute(
+            "SELECT * FROM paddle_subscriptions WHERE user_id = ? "
+            "AND status IN ('pending', 'active', 'past_due', 'paused', 'canceled') "
+            "ORDER BY updated_at DESC",
+            (user_id,),
+        ).fetchall()
+    subscriptions = []
+    for raw in rows:
+        subscription = dict(raw)
+        if subscription["status"] != "canceled" or _timestamp_after(
+            subscription.get("cancel_at") or subscription.get("period_end"), now
+        ):
+            subscriptions.append(subscription)
+    return subscriptions
+
+
+def get_unlinked_paddle_checkout_intents(user_id):
+    """Return this account's checkout attempts without a mapped subscription."""
+    with connection() as db:
+        rows = db.execute(
+            "SELECT DISTINCT environment, price_id FROM paddle_checkout_intents "
+            "WHERE user_id = ? AND paddle_subscription_id IS NULL "
+            "ORDER BY environment, price_id",
+            (user_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def record_paddle_cancellation_schedule(user_id, environment, subscription_id, effective_at):
+    """Persist a provider-confirmed Paddle cancellation for restore-time UI."""
+    with connection() as db:
+        cursor = db.execute(
+            "UPDATE paddle_subscriptions SET status = 'canceled', cancel_at = ?, updated_at = ? "
+            "WHERE user_id = ? AND environment = ? AND paddle_subscription_id = ? "
+            "AND status IN ('pending', 'active', 'past_due', 'paused', 'canceled')",
+            (effective_at, _now(), user_id, environment, subscription_id),
+        )
+    return cursor.rowcount == 1
+
+
+def record_legacy_cancellation_schedule(user_id, provider, subscription_id, effective_at):
+    """Persist a provider-confirmed legacy-provider cancellation for restore-time UI."""
+    with connection() as db:
+        cursor = db.execute(
+            "UPDATE account_subscriptions SET status = 'canceled', "
+            "period_end = COALESCE(?, period_end), updated_at = ? "
+            "WHERE user_id = ? AND provider = ? AND provider_subscription_id = ? "
+            "AND status IN ('active', 'past_due', 'canceled')",
+            (effective_at, _now(), user_id, provider, subscription_id),
+        )
+    return cursor.rowcount == 1
 
 
 def get_paddle_subscription_for_portal(user_id, environment):

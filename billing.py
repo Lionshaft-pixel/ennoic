@@ -174,8 +174,70 @@ class RazorpaySubscriptionProvider:
             period_end=_iso_timestamp(subscription.get("current_end")),
         )
 
+    @staticmethod
+    def _cancellation_state(subscription, subscription_id, expected_user_id=None):
+        if not isinstance(subscription, dict) or subscription.get("id") != subscription_id:
+            return None
+        if expected_user_id is not None:
+            notes = subscription.get("notes")
+            if not isinstance(notes, dict) or notes.get("ennoic_user_id") != expected_user_id:
+                return None
+        status = str(subscription.get("status", "")).lower()
+        if status in {"cancelled", "canceled", "completed"}:
+            return {"confirmed": True, "status": status, "effective_at": subscription.get("ended_at")}
+        cycle_end = subscription.get("cancel_at_cycle_end")
+        if (status in {"active", "authenticated"}
+                and (cycle_end is True or cycle_end == 1 or cycle_end == "1")):
+            return {
+                "confirmed": True,
+                "status": status,
+                "effective_at": _iso_timestamp(subscription.get("current_end")),
+            }
+        return None
+
+    def ensure_subscription_canceled(self, *, subscription_id, expected_user_id=None):
+        """Cancel at cycle end and require a provider-confirmed response/state."""
+        current = self._request("GET", f"/subscriptions/{subscription_id}")
+        if expected_user_id is not None:
+            notes = current.get("notes") if isinstance(current, dict) else None
+            if not isinstance(notes, dict) or notes.get("ennoic_user_id") != expected_user_id:
+                raise PaymentProviderUnavailable(
+                    "The Razorpay subscription could not be verified for this account."
+                )
+        confirmed = self._cancellation_state(current, subscription_id, expected_user_id)
+        if confirmed:
+            return confirmed
+
+        try:
+            updated = self._request(
+                "POST",
+                f"/subscriptions/{subscription_id}/cancel",
+                body={"cancel_at_cycle_end": 1},
+            )
+        except PaymentProviderUnavailable as cancel_error:
+            # A timeout can occur after Razorpay accepted the cancellation.
+            try:
+                current = self._request("GET", f"/subscriptions/{subscription_id}")
+            except PaymentProviderUnavailable:
+                raise cancel_error
+            confirmed = self._cancellation_state(current, subscription_id, expected_user_id)
+            if confirmed:
+                return confirmed
+            raise cancel_error
+
+        confirmed = self._cancellation_state(updated, subscription_id, expected_user_id)
+        if confirmed:
+            return confirmed
+        current = self._request("GET", f"/subscriptions/{subscription_id}")
+        confirmed = self._cancellation_state(current, subscription_id, expected_user_id)
+        if confirmed:
+            return confirmed
+        raise PaymentProviderUnavailable(
+            "Razorpay did not confirm that the subscription will stop renewing."
+        )
+
     def cancel_subscription(self, *, subscription_id):
-        self._request("POST", f"/subscriptions/{subscription_id}/cancel", body={"cancel_at_cycle_end": 1})
+        return self.ensure_subscription_canceled(subscription_id=subscription_id)
 
 
 def _iso_timestamp(value):
@@ -250,7 +312,23 @@ class SubscriptionService:
         provider = self._provider()
         if provider is None:
             raise PaymentProviderUnavailable("Subscription cancellation is not configured.")
-        provider.cancel_subscription(subscription_id=subscription_id)
+        return provider.cancel_subscription(subscription_id=subscription_id)
+
+    def ensure_subscription_canceled(self, *, subscription_id, expected_user_id=None):
+        provider = self._provider()
+        if provider is None:
+            raise PaymentProviderUnavailable("Subscription cancellation is not configured.")
+        ensure = getattr(provider, "ensure_subscription_canceled", None)
+        if ensure is None:
+            raise PaymentProviderUnavailable(
+                "The configured payment provider cannot confirm subscription cancellation."
+            )
+        result = ensure(subscription_id=subscription_id, expected_user_id=expected_user_id)
+        if not isinstance(result, dict) or result.get("confirmed") is not True:
+            raise PaymentProviderUnavailable(
+                "The payment provider did not confirm subscription cancellation."
+            )
+        return result
 
 
 subscription_service = SubscriptionService()

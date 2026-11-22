@@ -155,7 +155,7 @@ def health_check():
 def _run_account_deletion_worker():
     while not _account_deletion_worker_stop.is_set():
         try:
-            account_store.purge_due_deletions()
+            _purge_due_account_deletions()
         except Exception:
             app.logger.exception("account_deletion_purge_failed")
         _account_deletion_worker_stop.wait(60)
@@ -1158,11 +1158,151 @@ def delete_account():
     confirmation = typed_email.strip().casefold().encode("utf-8")
     if not secrets.compare_digest(confirmation, account_email.encode("utf-8")):
         return jsonify({"error": "The email did not match your account."}), 400
-    deletion = pending or account_store.schedule_user_deletion(user_id, request.remote_addr)
+
+    # A deletion request must not disable the account until every linked,
+    # potentially recurring provider subscription has confirmed cancellation.
+    try:
+        provider_cancellation_confirmed = _ensure_account_subscriptions_canceled(user_id)
+    except (paddle_billing.PaddleUnavailable, billing.PaymentProviderUnavailable) as exc:
+        app.logger.warning(
+            "account_deletion_billing_cancellation_failed error_type=%s",
+            type(exc).__name__,
+        )
+        return jsonify({
+            "error": (
+                "We couldn't confirm that your subscription will stop renewing, so your account "
+                "was not scheduled for deletion and remains available. Retry, use Manage subscription "
+                "in Settings if available, or contact ennoic.app@gmail.com."
+            )
+        }), 503
+
+    try:
+        deletion = pending or account_store.schedule_user_deletion(user_id, request.remote_addr)
+    except Exception as exc:
+        app.logger.error(
+            "account_deletion_schedule_failed error_type=%s",
+            type(exc).__name__,
+        )
+        if provider_cancellation_confirmed:
+            message = (
+                "Your provider cancellation was confirmed, but Ennoic couldn't schedule account "
+                "deletion. Your account remains available; retry the deletion request."
+            )
+        else:
+            message = "Ennoic couldn't schedule account deletion. Your account remains available; retry the request."
+        return jsonify({"error": message}), 503
     if deletion is None:
         return jsonify({"error": "The account could not be scheduled for deletion."}), 500
     session["account_deletion_id"] = user_id
     return jsonify({"scheduled": True, "purge_after": deletion["purge_after"]}), 202
+
+
+def _ensure_account_subscriptions_canceled(user_id):
+    """Cancel all billable subscriptions linked to this authenticated account."""
+    provider_cancellation_confirmed = False
+    configured_paddle_environment = paddle_billing.environment()
+    unresolved_intents = account_store.get_unlinked_paddle_checkout_intents(user_id)
+    if unresolved_intents:
+        account = account_store.get_user(user_id)
+        if account is None:
+            raise paddle_billing.PaddleUnavailable(
+                "The account could not be verified while checking Paddle checkout attempts."
+            )
+        for intent in unresolved_intents:
+            environment = intent["environment"]
+            if environment == "sandbox" and configured_paddle_environment != "sandbox":
+                continue
+            # A delayed webhook may have left a paid Paddle subscription unmapped.
+            # Reconcile only against this account's opaque checkout intents; never
+            # adopt a subscription based on an email match alone.
+            paddle_billing.PaddleAPI(env=environment).reconcile_account_subscription(
+                user_id=user_id,
+                email=account["email"],
+                expected_price_id=intent["price_id"],
+            )
+    paddle_subscriptions = account_store.get_paddle_subscriptions_for_deletion(user_id)
+    for subscription in paddle_subscriptions:
+        environment = subscription["environment"]
+        # Sandbox subscriptions cannot bill a customer. Check them only while the
+        # app itself is configured for sandbox; always check production records.
+        if environment == "sandbox" and configured_paddle_environment != "sandbox":
+            continue
+        confirmation = paddle_billing.PaddleAPI(env=environment).ensure_subscription_canceled(
+            subscription["paddle_subscription_id"],
+            expected_customer_id=subscription["paddle_customer_id"],
+        )
+        try:
+            recorded = account_store.record_paddle_cancellation_schedule(
+                user_id, environment, subscription["paddle_subscription_id"],
+                confirmation.get("effective_at"),
+            )
+        except Exception as exc:
+            raise paddle_billing.PaddleUnavailable(
+                "The confirmed Paddle cancellation could not be saved to the Ennoic account."
+            ) from exc
+        if not recorded:
+            raise paddle_billing.PaddleUnavailable(
+                "The confirmed Paddle cancellation could not be saved to the Ennoic account."
+            )
+        provider_cancellation_confirmed = True
+
+    legacy = account_store.get_account_subscription_for_deletion(user_id)
+    if not legacy:
+        return provider_cancellation_confirmed
+    status = legacy.get("status")
+    needs_provider_check = status in {"active", "past_due"} or (
+        status == "canceled"
+        and account_store._timestamp_after(legacy.get("period_end"), account_store._now())
+    ) or (status == "expired" and legacy.get("provider") == "razorpay")
+    if not needs_provider_check:
+        return provider_cancellation_confirmed
+    if status in {"past_due", "expired"} and legacy.get("provider") == "razorpay" \
+            and not legacy.get("provider_subscription_id"):
+        raise billing.PaymentProviderUnavailable(
+            "The stored Razorpay record has no provider subscription reference."
+        )
+    if legacy.get("provider") != "razorpay" or not legacy.get("provider_subscription_id"):
+        raise billing.PaymentProviderUnavailable(
+            "The stored subscription cannot be matched to a supported billing provider."
+        )
+    confirmation = billing.subscription_service.ensure_subscription_canceled(
+        subscription_id=legacy["provider_subscription_id"], expected_user_id=user_id
+    )
+    if status != "expired":
+        try:
+            recorded = account_store.record_legacy_cancellation_schedule(
+                user_id, legacy["provider"], legacy["provider_subscription_id"],
+                confirmation.get("effective_at"),
+            )
+        except Exception as exc:
+            raise billing.PaymentProviderUnavailable(
+                "The confirmed provider cancellation could not be saved to the Ennoic account."
+            ) from exc
+        if not recorded:
+            raise billing.PaymentProviderUnavailable(
+                "The confirmed provider cancellation could not be saved to the Ennoic account."
+            )
+    return True
+
+
+def _purge_due_account_deletions(limit=25):
+    """Reconfirm provider cancellation immediately before permanently purging data."""
+    due_user_ids = account_store.due_deletion_user_ids(limit=limit)
+    verified_user_ids = []
+    for user_id in due_user_ids:
+        try:
+            _ensure_account_subscriptions_canceled(user_id)
+        except (paddle_billing.PaddleUnavailable, billing.PaymentProviderUnavailable) as exc:
+            app.logger.warning(
+                "account_deletion_purge_deferred error_type=%s",
+                type(exc).__name__,
+            )
+            continue
+        verified_user_ids.append(user_id)
+    return account_store.purge_due_deletions(
+        verified_user_ids=verified_user_ids,
+        limit=limit,
+    )
 
 
 @app.route("/api/account/memories")
