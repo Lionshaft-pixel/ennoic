@@ -510,15 +510,12 @@ def _price_currency():
     return "INR" if country == "IN" else "USD"
 
 
-def _is_configured_admin(email):
-    if not isinstance(email, str):
-        return False
-    configured = {
-        item.strip().casefold()
-        for item in os.environ.get("ENNOIC_ADMIN_EMAILS", "").split(",")
-        if item.strip()
-    }
-    return email.casefold() in configured
+def _is_configured_admin(email, *, email_verified=False):
+    return (
+        email_verified is True
+        and isinstance(email, str)
+        and email.strip().casefold() == "anukalpy29@gmail.com"
+    )
 
 
 def _post_login_redirect():
@@ -548,7 +545,9 @@ def settings_page():
         "settings.html",
         user=current_user,
         account=account,
-        is_admin=_is_configured_admin(current_user.email),
+        is_admin=_is_configured_admin(
+            current_user.email, email_verified=current_user.email_verified
+        ),
         csrf_token=generate_csrf(),
     )
 
@@ -614,9 +613,15 @@ def save_checkout_contact():
 @app.route("/admin/users")
 @login_required
 def admin_users():
-    if not _is_configured_admin(current_user.email):
+    if not _is_configured_admin(current_user.email, email_verified=current_user.email_verified):
         abort(404)
     users = account_store.list_admin_users()
+    for account in users:
+        subscription = entitlements.account_subscription_status(account["id"])
+        account["plan"] = subscription["plan"]
+        account["subscription_status"] = subscription["status"]
+        account["period_end"] = subscription["period_end"]
+        account["provider"] = subscription["provider"]
     return render_template(
         "admin_users.html",
         users=users,
@@ -665,7 +670,35 @@ def create_paddle_checkout_intent():
 
 @app.route("/checkout/success")
 def paddle_checkout_success():
-    return render_template("checkout_success.html")
+    activation_confirmed = (
+        current_user.is_authenticated
+        and entitlements.account_subscription_status(current_user.id)["plan"] == "pro"
+    )
+    return render_template(
+        "checkout_success.html",
+        activation_confirmed=activation_confirmed,
+        authenticated=current_user.is_authenticated,
+        csrf_token=generate_csrf() if current_user.is_authenticated else "",
+    )
+
+
+@app.route("/checkout/success/reconcile", methods=["POST"])
+@login_required
+@limiter.limit("5 per hour")
+def reconcile_paddle_subscription():
+    env = paddle_billing.environment()
+    configured_price = paddle_billing.price_id(env) if env else ""
+    if not configured_price:
+        return redirect(url_for("paddle_checkout_success", check="pending"))
+    try:
+        paddle_billing.PaddleAPI().reconcile_account_subscription(
+            user_id=current_user.id,
+            email=current_user.email,
+            expected_price_id=configured_price,
+        )
+    except paddle_billing.PaddleUnavailable:
+        return redirect(url_for("paddle_checkout_success", check="pending"))
+    return redirect(url_for("paddle_checkout_success"))
 
 
 @app.route("/api/paddle/webhook", methods=["POST"])

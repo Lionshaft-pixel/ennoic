@@ -224,6 +224,7 @@ def process_webhook(raw_body, signature):
             price_id=item_price,
             checkout_token=_custom_checkout_token(data),
             event_source=event_source,
+            allow_expired_intent=True,
         )
 
     supported = {
@@ -280,6 +281,7 @@ def process_webhook(raw_body, signature):
         cancel_at=cancel_at,
         checkout_token=_custom_checkout_token(data),
         event_source=event_source,
+        allow_expired_intent=True,
     )
 
 
@@ -322,3 +324,124 @@ class PaddleAPI:
         if isinstance(general, str):
             return general
         raise PaddleUnavailable("Paddle did not return a customer portal link.")
+
+    def reconcile_account_subscription(self, *, user_id, email, expected_price_id):
+        """Sync only Paddle subscriptions carrying this account's stored checkout token.
+
+        Email is used only to locate candidate Paddle customers. A subscription is
+        accepted only when Paddle returns the opaque checkout token stored for this
+        authenticated Ennoic user, in this Paddle environment, and for this price.
+        """
+        if not isinstance(email, str) or not email.strip() or not expected_price_id:
+            return False
+
+        def get(path, params):
+            try:
+                response = requests.get(
+                    f"{self.base_url}{path}",
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    params=params,
+                    timeout=15,
+                )
+                response.raise_for_status()
+                payload = response.json()
+            except (requests.RequestException, ValueError) as exc:
+                raise PaddleUnavailable("Could not verify subscription status with Paddle.") from exc
+            if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
+                raise PaddleUnavailable("Paddle returned an invalid subscription response.")
+            meta = payload.get("meta")
+            pagination = meta.get("pagination") if isinstance(meta, dict) else None
+            if isinstance(pagination, dict) and pagination.get("has_more"):
+                raise PaddleUnavailable("Paddle returned an incomplete subscription result.")
+            return payload["data"]
+
+        customers = get("/customers", {"email": email.strip(), "per_page": 200})
+        matched_customers = [
+            row for row in customers
+            if isinstance(row, dict)
+            and isinstance(row.get("id"), str)
+            and row["id"].startswith("ctm_")
+            and isinstance(row.get("email"), str)
+            and row["email"].strip().casefold() == email.strip().casefold()
+        ]
+        snapshots = []
+        for customer in matched_customers:
+            subscriptions = get("/subscriptions", {
+                "customer_id": customer["id"],
+                "status": "active,canceled,past_due,paused",
+                "per_page": 200,
+            })
+            for data in subscriptions:
+                if not isinstance(data, dict):
+                    continue
+                subscription_id = data.get("id")
+                if (not isinstance(subscription_id, str) or not subscription_id.startswith("sub_")
+                        or data.get("customer_id") != customer["id"]):
+                    continue
+                token = _custom_checkout_token(data)
+                intent = account_store.get_paddle_checkout_intent(
+                    user_id, self.env, expected_price_id, token
+                )
+                if not intent or _item_price_id(data) != expected_price_id:
+                    continue
+                status = data.get("status")
+                if status not in {"active", "past_due", "paused", "canceled"}:
+                    continue
+                updated_at = data.get("updated_at") or data.get("created_at")
+                try:
+                    provider_updated_at = (
+                        _parse_timestamp(data["updated_at"], "subscription update timestamp")
+                        if data.get("updated_at") else None
+                    )
+                    occurred_at = _parse_timestamp(
+                        updated_at, "subscription update timestamp" if data.get("updated_at") else "subscription creation timestamp"
+                    )
+                    current_period = data.get("current_billing_period")
+                    if current_period is not None and not isinstance(current_period, dict):
+                        continue
+                    period_start = (
+                        _parse_timestamp(current_period["starts_at"], "billing period start")
+                        if current_period and current_period.get("starts_at") else None
+                    )
+                    period_end = (
+                        _parse_timestamp(current_period["ends_at"], "billing period end")
+                        if current_period and current_period.get("ends_at") else None
+                    )
+                    scheduled_change = data.get("scheduled_change")
+                    cancel_at = None
+                    if isinstance(scheduled_change, dict) and scheduled_change.get("action") == "cancel":
+                        cancel_at = _parse_timestamp(
+                            scheduled_change.get("effective_at"), "scheduled cancellation date"
+                        )
+                    elif status == "canceled" and data.get("canceled_at"):
+                        cancel_at = _parse_timestamp(data["canceled_at"], "cancellation date")
+                except ValueError:
+                    continue
+                snapshots.append((occurred_at, data, token, subscription_id, status,
+                                  provider_updated_at, period_start, period_end, cancel_at))
+
+        # Apply oldest first so the newest Paddle snapshot remains the account's latest row.
+        snapshots.sort(key=lambda entry: entry[0])
+        changed = False
+        event_source = "paddle" if self.env == "sandbox" else "paddle:production"
+        for occurred_at, data, token, subscription_id, status, provider_updated_at, period_start, period_end, cancel_at in snapshots:
+            digest = hashlib.sha256(
+                f"{self.env}:{subscription_id}:{provider_updated_at or occurred_at}".encode("utf-8")
+            ).hexdigest()
+            changed = account_store.apply_paddle_subscription_event(
+                event_id=f"evt_sync_{digest}",
+                occurred_at=occurred_at,
+                provider_updated_at=provider_updated_at,
+                environment=self.env,
+                subscription_id=subscription_id,
+                customer_id=data["customer_id"],
+                status=status,
+                price_id=expected_price_id,
+                period_start=period_start,
+                period_end=period_end,
+                cancel_at=cancel_at,
+                checkout_token=token,
+                event_source=event_source,
+                allow_expired_intent=True,
+            ) or changed
+        return changed

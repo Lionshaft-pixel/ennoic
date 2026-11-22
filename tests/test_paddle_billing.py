@@ -93,6 +93,8 @@ class PaddleBillingTests(unittest.TestCase):
         self.assertEqual(bad.status_code, 400)
         success_page = client.get("/checkout/success")
         self.assertEqual(success_page.status_code, 200)
+        self.assertIn("Your Ennoic Pro subscription is being activated.", success_page.get_data(as_text=True))
+        self.assertNotIn("This page does not activate Pro by itself", success_page.get_data(as_text=True))
         self.assertEqual(entitlements.account_entitlements(self.user["id"])["plan"], "free")
 
     def test_paddle_webhook_updates_badge_and_settings_after_refresh(self):
@@ -139,9 +141,26 @@ class PaddleBillingTests(unittest.TestCase):
         event = self.subscription_event(intent=token)
         body, signature = self.signed(event)
         self.assertTrue(paddle_billing.process_webhook(body, signature))
+        self.assertFalse(paddle_billing.process_webhook(body, signature))
         view = entitlements.account_entitlements(self.user["id"])
         self.assertEqual((view["plan"], view["provider"]), ("pro", "paddle"))
         self.assertEqual(entitlements.chat_limits(self.user["id"])["plan"], "pro")
+
+    def test_delayed_signed_webhook_still_maps_expired_checkout_intent(self):
+        token = account_store.create_paddle_checkout_intent(
+            self.user["id"], "sandbox", "pri_sandbox_monthly"
+        )
+        with account_store.connection() as db:
+            db.execute(
+                "UPDATE paddle_checkout_intents SET expires_at = ?",
+                ((datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),),
+            )
+        event = self.subscription_event(intent=token)
+        body, signature = self.signed(event)
+        self.assertTrue(paddle_billing.process_webhook(body, signature))
+        stored = account_store.get_paddle_subscription(self.user["id"], "sandbox")
+        self.assertEqual(stored["paddle_subscription_id"], "sub_paddle_test")
+        self.assertEqual(entitlements.account_entitlements(self.user["id"])["plan"], "pro")
 
     def test_transaction_paid_does_not_grant_pro_and_duplicate_is_ignored(self):
         token = account_store.create_paddle_checkout_intent(
@@ -314,6 +333,123 @@ class PaddleBillingTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["url"], "https://portal.example.test")
         create.assert_called_once_with("ctm_paddle_test", "sub_paddle_test")
+
+    def test_admin_dashboard_uses_production_paddle_entitlements_for_plan_counts(self):
+        token = account_store.create_paddle_checkout_intent(
+            self.user["id"], "production", "pri_live_monthly"
+        )
+        event = self.subscription_event(intent=token, subscription_id="sub_paddle_live")
+        event["data"]["items"][0]["price"]["id"] = "pri_live_monthly"
+        event["data"]["customer_id"] = "ctm_paddle_live"
+        body, signature = self.signed(event, secret="whsec_live_secret")
+
+        admin = account_store.create_user("anukalpy29@gmail.com", "correct-horse-battery-7")
+        account_store.verify_email(admin["id"])
+        client = app_module.app.test_client()
+        client.post("/auth/login", data={"email": admin["email"], "password": "correct-horse-battery-7"})
+
+        with patch.dict(os.environ, self.live_environment()), patch.dict(
+            os.environ, {"ENNOIC_ADMIN_EMAILS": "attacker@example.com"}
+        ):
+            self.assertTrue(paddle_billing.process_webhook(body, signature))
+            self.assertEqual(entitlements.account_entitlements(self.user["id"])["plan"], "pro")
+            response = client.get("/admin/users")
+
+        page = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("<span>Pro plan</span><strong>1</strong>", page)
+        self.assertIn("paddle@example.com", page)
+        paddle_account_row = page.split("paddle@example.com", 1)[1].split("</tr>", 1)[0]
+        self.assertIn("badge pro", paddle_account_row)
+        self.assertNotIn("contact@example.com", page)
+
+    def test_admin_users_denies_non_admin_even_if_environment_lists_them(self):
+        client = app_module.app.test_client()
+        client.post("/auth/login", data={"email": self.user["email"], "password": "correct-horse-battery-7"})
+        with patch.dict(os.environ, {"ENNOIC_ADMIN_EMAILS": self.user["email"]}):
+            response = client.get("/admin/users")
+        self.assertEqual(response.status_code, 404)
+
+    def test_reconciliation_syncs_only_current_users_paddle_custom_data(self):
+        token = account_store.create_paddle_checkout_intent(
+            self.user["id"], "sandbox", "pri_sandbox_monthly"
+        )
+        with account_store.connection() as db:
+            db.execute(
+                "UPDATE paddle_checkout_intents SET expires_at = ?",
+                ((datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),),
+            )
+        now = datetime.now(timezone.utc)
+        subscription = {
+            "id": "sub_paddle_reconcile",
+            "customer_id": "ctm_paddle_reconcile",
+            "status": "active",
+            "custom_data": {"ennoic_checkout_intent": token},
+            "items": [{"price": {"id": "pri_sandbox_monthly"}, "quantity": 1}],
+            "current_billing_period": {
+                "starts_at": now.isoformat(),
+                "ends_at": (now + timedelta(days=30)).isoformat(),
+            },
+            "updated_at": now.isoformat(),
+        }
+
+        def response(payload):
+            result = Mock()
+            result.json.return_value = payload
+            result.raise_for_status.return_value = None
+            return result
+
+        def paddle_get(url, **kwargs):
+            if url.endswith("/customers"):
+                return response({
+                    "data": [{"id": "ctm_paddle_reconcile", "email": self.user["email"]}],
+                    "meta": {"pagination": {"has_more": False}},
+                })
+            return response({
+                "data": [subscription],
+                "meta": {"pagination": {"has_more": False}},
+            })
+
+        client = app_module.app.test_client()
+        client.post("/auth/login", data={"email": self.user["email"], "password": "correct-horse-battery-7"})
+        with patch("paddle_billing.requests.get", side_effect=paddle_get) as paddle_request:
+            response = client.post("/checkout/success/reconcile")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/checkout/success", response.headers["Location"])
+        self.assertEqual(paddle_request.call_count, 2)
+        self.assertEqual(entitlements.account_entitlements(self.user["id"])["plan"], "pro")
+        active_page = client.get("/checkout/success").get_data(as_text=True)
+        self.assertIn("Your Ennoic Pro subscription is active!", active_page)
+
+    def test_reconciliation_does_not_map_by_email_without_stored_checkout_token(self):
+        customer = {"id": "ctm_paddle_reconcile", "email": self.user["email"]}
+        snapshot = {
+            "id": "sub_unlinked",
+            "customer_id": customer["id"],
+            "status": "active",
+            "custom_data": None,
+            "items": [{"price": {"id": "pri_sandbox_monthly"}, "quantity": 1}],
+            "current_billing_period": None,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        responses = [
+            {"data": [customer], "meta": {"pagination": {"has_more": False}}},
+            {"data": [snapshot], "meta": {"pagination": {"has_more": False}}},
+        ]
+        client = app_module.app.test_client()
+        client.post("/auth/login", data={"email": self.user["email"], "password": "correct-horse-battery-7"})
+        with patch("paddle_billing.requests.get", side_effect=[
+            Mock(json=Mock(return_value=responses[0]), raise_for_status=Mock()),
+            Mock(json=Mock(return_value=responses[1]), raise_for_status=Mock()),
+        ]):
+            client.post("/checkout/success/reconcile")
+        self.assertEqual(entitlements.account_entitlements(self.user["id"])["plan"], "free")
+
+    def test_reconciliation_requires_authentication_and_accepts_no_client_subscription_id(self):
+        client = app_module.app.test_client()
+        response = client.post("/checkout/success/reconcile", json={"subscription_id": "sub_attacker"})
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.headers["Location"].endswith("/login"))
 
 
 if __name__ == "__main__":

@@ -464,28 +464,14 @@ def list_admin_users():
             """
             SELECT u.id, u.email, u.email_verified, u.created_at, u.deleted_at, u.purge_after,
                    u.last_login_at, u.last_login_ip,
-                   COALESCE(s.plan, 'free') AS plan,
-                   COALESCE(s.status, 'free') AS subscription_status,
-                   s.period_end, s.provider,
                    c.full_name AS contact_name, c.email AS contact_email,
                    c.phone AS contact_phone, c.updated_at AS contact_updated_at
             FROM users AS u
-            LEFT JOIN account_subscriptions AS s ON s.user_id = u.id
             LEFT JOIN checkout_contacts AS c ON c.user_id = u.id
             ORDER BY u.created_at DESC, u.email COLLATE NOCASE
             """
         ).fetchall()
-    result = []
-    for row in rows:
-        user = dict(row)
-        subscription = get_account_subscription(user["id"])
-        if subscription:
-            user["plan"] = subscription["plan"]
-            user["subscription_status"] = subscription["status"]
-            user["period_end"] = subscription["period_end"]
-            user["provider"] = subscription["provider"]
-        result.append(user)
-    return result
+    return [dict(row) for row in rows]
 
 
 def schedule_user_deletion(user_id, client_ip, *, grace_days=30, audit_retention_days=90):
@@ -1050,16 +1036,26 @@ def create_paddle_checkout_intent(user_id, environment, price_id, *, lifetime_mi
     return token
 
 
-def _paddle_intent_by_token(db, token):
+def _paddle_intent_by_token(db, token, *, allow_expired=False):
     if not isinstance(token, str) or not token or len(token) > 200:
         return None
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
     intent = db.execute(
         "SELECT * FROM paddle_checkout_intents WHERE token_hash = ?", (token_hash,)
     ).fetchone()
-    if not intent or not _timestamp_after(intent["expires_at"], _now()):
+    if not intent or (not allow_expired and not _timestamp_after(intent["expires_at"], _now())):
         return None
     return intent
+
+
+def get_paddle_checkout_intent(user_id, environment, price_id, token):
+    """Resolve a Paddle custom-data token only when it belongs to this user/env/price."""
+    with connection() as db:
+        intent = _paddle_intent_by_token(db, token, allow_expired=True)
+    if (not intent or intent["user_id"] != user_id or intent["environment"] != environment
+            or intent["price_id"] != price_id):
+        return None
+    return dict(intent)
 
 
 def _paddle_event_is_newer(occurred_at, provider_updated_at, row):
@@ -1087,7 +1083,8 @@ def _paddle_event_is_newer(occurred_at, provider_updated_at, row):
 
 def record_paddle_transaction_event(*, event_id, event_type, occurred_at, transaction_id,
                                     status, environment, customer_id=None, subscription_id=None,
-                                    price_id=None, checkout_token=None, event_source="paddle"):
+                                    price_id=None, checkout_token=None, event_source="paddle",
+                                    allow_expired_intent=False):
     """Record signed Paddle transaction events without granting Pro access."""
     now = _now()
     with connection() as db:
@@ -1099,7 +1096,9 @@ def record_paddle_transaction_event(*, event_id, event_type, occurred_at, transa
         if inserted.rowcount == 0:
             return False
 
-        intent = _paddle_intent_by_token(db, checkout_token)
+        intent = _paddle_intent_by_token(
+            db, checkout_token, allow_expired=allow_expired_intent
+        )
         existing_subscription = None
         if subscription_id:
             existing_subscription = db.execute(
@@ -1169,7 +1168,7 @@ def record_paddle_transaction_event(*, event_id, event_type, occurred_at, transa
 def apply_paddle_subscription_event(*, event_id, occurred_at, provider_updated_at, environment,
                                     subscription_id, customer_id, status, price_id, period_start=None,
                                     period_end=None, cancel_at=None, checkout_token=None,
-                                    event_source="paddle"):
+                                    event_source="paddle", allow_expired_intent=False):
     """Atomically deduplicate, order, and persist a signed Paddle subscription snapshot."""
     if environment not in {"sandbox", "production"}:
         raise ValueError("Unsupported Paddle environment.")
@@ -1188,7 +1187,9 @@ def apply_paddle_subscription_event(*, event_id, occurred_at, provider_updated_a
         existing = db.execute(
             "SELECT * FROM paddle_subscriptions WHERE paddle_subscription_id = ?", (subscription_id,)
         ).fetchone()
-        intent = _paddle_intent_by_token(db, checkout_token)
+        intent = _paddle_intent_by_token(
+            db, checkout_token, allow_expired=allow_expired_intent
+        )
         if intent and intent["environment"] != environment:
             raise ValueError("Paddle subscription environment does not match its checkout intent.")
         if intent and price_id != intent["price_id"]:
