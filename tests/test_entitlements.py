@@ -187,6 +187,25 @@ class EntitlementTests(unittest.TestCase):
         self.assertTrue(all("automation runs" not in item.lower() for item in spanish["features"]["pro"]))
         self.assertTrue(all("file" not in item.lower() for item in spanish["features"]["pro"]))
 
+    def test_india_pricing_shows_collapsible_upi_notice_only_for_inr_region(self):
+        client = app.app.test_client()
+        with patch.object(app, "_price_currency", return_value="INR"):
+            india_page = client.get("/pricing").get_data(as_text=True)
+        with patch.object(app, "_price_currency", return_value="USD"):
+            international_page = client.get("/pricing").get_data(as_text=True)
+
+        self.assertIn('<details class="upi-notice" id="india-upi-autopay-notice">', india_page)
+        self.assertIn("₹179/month with UPI AutoPay", india_page)
+        self.assertIn(
+            "Your subscription is ₹179/month. UPI payments are processed by Paddle. "
+            "Your UPI app may display 'Paddlecom' and a maximum authorization limit of ₹15,000. "
+            "This is not an upfront ₹15,000 charge.",
+            india_page,
+        )
+        self.assertLess(india_page.index('id="upgrade"'), india_page.index('id="india-upi-autopay-notice"'))
+        self.assertNotIn("india-upi-autopay-notice", international_page)
+        self.assertNotIn("Paddlecom", international_page)
+
     def test_verified_provider_event_grants_configured_pro_entitlements(self):
         user = self.create_user()
         with patch.dict(os.environ, {
