@@ -1,4 +1,5 @@
 import os
+import re
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -189,7 +190,8 @@ class EntitlementTests(unittest.TestCase):
 
     def test_pricing_page_loads_notice_hidden_until_existing_region_data_resolves(self):
         client = app.app.test_client()
-        page = client.get("/pricing").get_data(as_text=True)
+        page_response = client.get("/pricing")
+        page = page_response.get_data(as_text=True)
         india_pricing = client.get("/api/pricing", headers={"Accept-Language": "en-IN,en;q=0.9"}).get_json()
         international_pricing = client.get(
             "/api/pricing", headers={"Accept-Language": "en-US,en;q=0.9"}
@@ -207,6 +209,14 @@ class EntitlementTests(unittest.TestCase):
         self.assertIn("/static/pricing-region.js", page)
         self.assertEqual(india_pricing["selected_currency"], "INR")
         self.assertEqual(international_pricing["selected_currency"], "USD")
+
+        region_script = re.search(
+            r'<script src="/static/pricing-region\.js" nonce="([^"]+)"></script>', page
+        )
+        self.assertIsNotNone(region_script)
+        csp = page_response.headers["Content-Security-Policy"]
+        self.assertIn(f"'nonce-{region_script.group(1)}'", csp)
+        self.assertIn("'strict-dynamic'", csp)
 
     def test_verified_provider_event_grants_configured_pro_entitlements(self):
         user = self.create_user()
