@@ -141,6 +141,17 @@ function showResetForm() {
 if (card && authContext.resetToken) {
   showResetForm();
 } else if (card) {
+  const password = card.querySelector("#password");
+  const passwordToggle = card.querySelector("[data-password-toggle]");
+  if (password && passwordToggle) {
+    passwordToggle.addEventListener("click", () => {
+      const showPassword = password.type === "password";
+      password.type = showPassword ? "text" : "password";
+      passwordToggle.textContent = showPassword ? "Hide" : "Show";
+      passwordToggle.setAttribute("aria-label", showPassword ? "Hide password" : "Show password");
+    });
+  }
+
   addMessage(card, authContext.error, true);
   addMessage(card, authContext.notice, false);
 
