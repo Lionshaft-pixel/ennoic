@@ -1,9 +1,11 @@
 import os
 import re
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import account_store
 import app
@@ -146,6 +148,82 @@ class EntitlementTests(unittest.TestCase):
             "object": "keys",
             "time": "tomorrow",
         }])
+
+    def test_concurrent_ai_reservations_cannot_consume_the_last_quota_slot_more_than_once(self):
+        user = self.create_user()
+        period_start = "2026-11-01T00:00:00+00:00"
+        period_end = "2026-12-01T00:00:00+00:00"
+        quota = 5
+        for index in range(quota - 1):
+            result = account_store.reserve_ai_request(
+                user["id"], f"prior-request-{index}", f"hash-{index}",
+                period_start, period_end, quota,
+            )
+            self.assertEqual(result["state"], "reserved")
+
+        workers = 8
+        start = threading.Barrier(workers)
+
+        def reserve(index):
+            start.wait(timeout=5)
+            return account_store.reserve_ai_request(
+                user["id"], f"parallel-request-{index}", f"parallel-hash-{index}",
+                period_start, period_end, quota,
+            )
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            results = list(executor.map(reserve, range(workers)))
+
+        self.assertEqual(sum(result["state"] == "reserved" for result in results), 1)
+        self.assertEqual(sum(result["state"] == "limit" for result in results), workers - 1)
+        self.assertEqual(account_store.get_usage(user["id"], "ai_requests", period_start), quota)
+
+    def test_concurrent_memory_creation_cannot_exceed_account_capacity(self):
+        user = self.create_user()
+        workers = 8
+        start = threading.Barrier(workers)
+
+        def remember(index):
+            start.wait(timeout=5)
+            try:
+                return account_store.remember(
+                    user["id"], f"Person {index}", f"fact {index}", "today", max_memories=1,
+                )
+            except account_store.MemoryCapacityReached:
+                return "limit"
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            results = list(executor.map(remember, range(workers)))
+
+        self.assertEqual(results.count("Stored new memory"), 1)
+        self.assertEqual(results.count("limit"), workers - 1)
+        self.assertEqual(account_store.count_memories(user["id"]), 1)
+
+    def test_postgres_write_guard_locks_only_the_target_users_row(self):
+        db = Mock()
+        with patch("account_store.database_layer.uses_postgres", return_value=True):
+            account_store._begin_user_write(db, "target-user")
+
+        db.execute.assert_any_call("BEGIN IMMEDIATE")
+        db.execute.assert_any_call(
+            "SELECT id FROM users WHERE id = ? FOR UPDATE", ("target-user",)
+        )
+
+    def test_legacy_memory_import_uses_the_same_account_write_guard(self):
+        user = self.create_user()
+        with patch.object(
+            account_store,
+            "_begin_user_write",
+            wraps=account_store._begin_user_write,
+        ) as begin_user_write:
+            imported = account_store.import_legacy_data(user["id"], [{
+                "person": "Ari", "object": "badge", "time": "Friday",
+            }])
+
+        begin_user_write.assert_called_once()
+        self.assertEqual(begin_user_write.call_args.args[1], user["id"])
+        self.assertEqual(imported["memories"], 1)
+        self.assertEqual(account_store.count_memories(user["id"]), 1)
 
     def test_memory_limit_response_is_actionable_and_keeps_saved_memory(self):
         user = self.create_user()

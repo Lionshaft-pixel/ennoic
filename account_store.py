@@ -53,6 +53,18 @@ def connection():
     return database_layer.connection()
 
 
+def _begin_user_write(db, user_id):
+    """Start a write transaction and serialize mutations for one account.
+
+    PostgreSQL locks only this account's users row, so unrelated users proceed
+    independently. SQLite has no row-level locks; BEGIN IMMEDIATE acquires its
+    normal database-wide writer reservation before any count/check reads.
+    """
+    db.execute("BEGIN IMMEDIATE")
+    if database_layer.uses_postgres():
+        db.execute("SELECT id FROM users WHERE id = ? FOR UPDATE", (user_id,)).fetchone()
+
+
 def initialize():
     with connection() as db:
         db.execute("BEGIN IMMEDIATE")
@@ -841,6 +853,7 @@ def count_memories(user_id):
 
 def remember(user_id, person, object_name, time_value, *, max_memories=None):
     with connection() as db:
+        _begin_user_write(db, user_id)
         existing = db.execute(
             "SELECT id FROM memories WHERE user_id = ? AND lower(person) = lower(?) "
             "AND lower(object) = lower(?)",
@@ -909,7 +922,7 @@ def get_usage(user_id, meter, period_start):
 def reserve_ai_request(user_id, request_id, request_hash, period_start, period_end, monthly_limit, *, billable=True):
     now = _now()
     with connection() as db:
-        db.execute("BEGIN IMMEDIATE")
+        _begin_user_write(db, user_id)
         existing = db.execute(
             "SELECT * FROM ai_requests WHERE user_id = ? AND request_id = ?",
             (user_id, request_id),
@@ -981,6 +994,7 @@ def reserve_ai_request(user_id, request_id, request_hash, period_start, period_e
 def complete_ai_request(user_id, request_id, response, response_status=200):
     now = _now()
     with connection() as db:
+        _begin_user_write(db, user_id)
         db.execute(
             "UPDATE ai_requests SET state = 'completed', response_json = ?, response_status = ?, updated_at = ? "
             "WHERE user_id = ? AND request_id = ? AND state = 'reserved'",
@@ -991,7 +1005,7 @@ def complete_ai_request(user_id, request_id, response, response_status=200):
 def release_ai_request(user_id, request_id):
     now = _now()
     with connection() as db:
-        db.execute("BEGIN IMMEDIATE")
+        _begin_user_write(db, user_id)
         row = db.execute(
             "SELECT period_start, state, billable FROM ai_requests WHERE user_id = ? AND request_id = ?",
             (user_id, request_id),
@@ -1429,6 +1443,7 @@ def import_legacy_data(user_id, legacy_memories=()):
         prepared_memories.append((person.strip(), object_name.strip(), time_value.strip()))
 
     with connection() as db:
+        _begin_user_write(db, user_id)
         task_count = db.execute("SELECT COUNT(*) AS count FROM tasks WHERE user_id IS NULL").fetchone()["count"]
         memory_count = db.execute("SELECT COUNT(*) AS count FROM memories WHERE user_id IS NULL").fetchone()["count"]
         db.execute("UPDATE tasks SET user_id = ? WHERE user_id IS NULL", (user_id,))
