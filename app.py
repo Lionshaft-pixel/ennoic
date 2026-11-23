@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 
 import account_store
 import billing
+import database as database_layer
 import entitlements
 import paddle_billing
 import task_store
@@ -46,6 +47,27 @@ def _environment_value(*names, default=None):
         if value:
             return value
     return default
+
+
+def _trusted_public_origin():
+    """Return a configured canonical origin, never one derived from request headers."""
+    configured = _environment_value(
+        "ENNOIC_PUBLIC_ORIGIN", "ENNOIC_PUBLIC_URL", "PUBLIC_URL",
+        default="https://ennoic.onrender.com",
+    ).strip()
+    from urllib.parse import urlsplit
+
+    parsed = urlsplit(configured)
+    local_hosts = {"localhost", "127.0.0.1", "::1"}
+    if (parsed.scheme not in {"https", "http"} or not parsed.hostname or parsed.username
+            or parsed.password or parsed.query or parsed.fragment or parsed.path not in {"", "/"}
+            or (parsed.scheme != "https" and parsed.hostname not in local_hosts)):
+        raise RuntimeError("ENNOIC_PUBLIC_ORIGIN must be a trusted HTTPS origin.")
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def _trusted_external_url(endpoint, **values):
+    return _trusted_public_origin() + url_for(endpoint, **values)
 
 
 def _secret_key():
@@ -100,6 +122,10 @@ _dummy_password_hash = generate_password_hash(
     secrets.token_urlsafe(32),
     method="pbkdf2:sha256:600000",
 )
+_AUTH_CONTINUE_NOTICE = (
+    "If these details need an email step, check your inbox and spam folder. "
+    "If you already have an account, you can also reset your password."
+)
 
 
 class Account(UserMixin):
@@ -131,7 +157,7 @@ def unauthorized():
 
 @app.before_request
 def initialize_database():
-    if request.path == "/healthz":
+    if request.path in {"/healthz", "/readyz"}:
         return
     database_started_at = time.perf_counter()
     path = account_store.database_key()
@@ -152,12 +178,24 @@ def health_check():
     return jsonify({"status": "ok"})
 
 
+@app.route("/readyz")
+def readiness_check():
+    try:
+        database_layer.check_readiness(timeout_seconds=2)
+    except Exception as error:
+        app.logger.warning("database_readiness_failed error_type=%s", type(error).__name__)
+        return jsonify({"status": "not_ready"}), 503
+    return jsonify({"status": "ready"})
+
+
 def _run_account_deletion_worker():
     while not _account_deletion_worker_stop.is_set():
         try:
             _purge_due_account_deletions()
-        except Exception:
-            app.logger.exception("account_deletion_purge_failed")
+        except Exception as error:
+            app.logger.error(
+                "account_deletion_purge_failed error_type=%s", type(error).__name__
+            )
         _account_deletion_worker_stop.wait(60)
 
 
@@ -187,7 +225,7 @@ def add_security_headers(response):
     if bundle_nonce:
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            f"script-src 'self' 'nonce-{bundle_nonce}' 'strict-dynamic' 'unsafe-eval' blob: https://cdn.jsdelivr.net https://checkout.razorpay.com https://cdn.paddle.com; "
+            f"script-src 'self' 'nonce-{bundle_nonce}' 'strict-dynamic' blob: https://cdn.jsdelivr.net https://checkout.razorpay.com https://cdn.paddle.com; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; "
             "connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com https://api.razorpay.com https://checkout.razorpay.com https://*.paddle.com https://*.paddle.net; "
@@ -426,7 +464,7 @@ def _send_token_email(user, purpose):
         )
         return False
     token = _create_email_token(user, purpose)
-    configured_url = _environment_value("ENNOIC_PUBLIC_URL", "PUBLIC_URL", default=request.url_root)
+    configured_url = _trusted_public_origin()
     if purpose == "verify":
         relative_url = url_for("verify_email", token=token)
         subject = "Verify your Ennoic account"
@@ -753,7 +791,7 @@ def create_checkout():
             user_id=current_user.id,
             plan=data.get("plan", "pro"),
             currency=_price_currency(),
-            return_url=url_for("pricing_page", _external=True),
+            return_url=_trusted_external_url("pricing_page"),
             contact=contact,
         )
     except billing.PaymentProviderUnavailable as exc:
@@ -833,7 +871,7 @@ def google_login():
     session["google_oauth"] = {"state": state, "nonce": nonce, "verifier": verifier}
     params = {
         "client_id": _google_oauth_value("CLIENT_ID"),
-        "redirect_uri": url_for("google_callback", _external=True),
+        "redirect_uri": _trusted_external_url("google_callback"),
         "response_type": "code",
         "scope": "openid email profile",
         "state": state,
@@ -858,7 +896,7 @@ def google_callback():
     if request.args.get("error") or not request.args.get("code"):
         return _google_login_error("Google sign-in was cancelled or could not be completed.")
 
-    redirect_uri = url_for("google_callback", _external=True)
+    redirect_uri = _trusted_external_url("google_callback")
     try:
         token_response = requests.post(
             "https://oauth2.googleapis.com/token",
@@ -941,7 +979,7 @@ def register():
     if user:
         _send_token_email(user, "verify")
     return _auth_template(
-        auth_notice="If the address can be registered, a verification link will be sent. If it does not arrive, check the app terminal for account_email_delivery_failed and its stage.",
+        auth_notice="If this address can be registered, a verification link will be sent. Check your inbox and spam folder.",
         active_form="login",
     ), 202
 
@@ -952,17 +990,27 @@ def continue_auth():
     email = request.form.get("email", "")
     password = request.form.get("password", "")
     try:
+        account_store.validate_password(password)
+    except ValueError as exc:
+        return _auth_template(auth_error=str(exc)), 400
+    try:
         user = account_store.get_user_by_email(email)
     except ValueError as exc:
         return _auth_template(auth_error=str(exc)), 400
 
     if user is not None:
         if not account_store.verify_password(user, password):
-            return _auth_template(auth_error="Email or password is incorrect."), 401
+            if not _email_delivery_configured():
+                return _auth_template(
+                    auth_error="Account email delivery is temporarily unavailable. Please try again later."
+                ), 503
+            return _auth_template(auth_notice=_AUTH_CONTINUE_NOTICE), 202
         if not user["email_verified"]:
-            return _auth_template(
-                auth_notice="Please verify your email using the link we sent before signing in."
-            ), 202
+            if not _email_delivery_configured():
+                return _auth_template(
+                    auth_error="Account email delivery is temporarily unavailable. Please try again later."
+                ), 503
+            return _auth_template(auth_notice=_AUTH_CONTINUE_NOTICE), 202
         if user["deleted_at"] is not None:
             if not account_store.cancel_user_deletion(user["id"]):
                 return _auth_template(auth_error="Email or password is incorrect."), 401
@@ -974,13 +1022,9 @@ def continue_auth():
         account_store.record_user_login(user["id"], request.remote_addr)
         return _post_login_redirect()
 
-    try:
-        account_store.validate_password(password)
-    except ValueError as exc:
-        return _auth_template(auth_error=str(exc)), 400
     if not _email_delivery_configured():
         return _auth_template(
-            auth_error="Account email delivery is not configured. Ask the server administrator before signing up."
+            auth_error="Account email delivery is temporarily unavailable. Please try again later."
         ), 503
 
     try:
@@ -999,7 +1043,7 @@ def continue_auth():
     else:
         _send_token_email(user, "verify")
     return _auth_template(
-        auth_notice="If this address can be registered, a verification link will be sent. Check your inbox and spam folder."
+        auth_notice=_AUTH_CONTINUE_NOTICE
     ), 202
 
 
@@ -1051,11 +1095,10 @@ def verify_email(token):
 @app.route("/auth/resend-verification", methods=["POST"])
 @limiter.limit("3 per hour")
 def resend_verification():
-    sent = False
     try:
         user = account_store.get_user_by_email(request.form.get("email", ""))
         if user and not user["email_verified"]:
-            sent = _send_token_email(user, "verify")
+            _send_token_email(user, "verify")
         elif user:
             app.logger.info("account_verification_resend_skipped reason=already_verified")
         else:
@@ -1063,11 +1106,7 @@ def resend_verification():
     except ValueError:
         app.logger.info("account_verification_resend_skipped reason=invalid_email")
     return _auth_template(
-        auth_notice=(
-            "Verification email sent. Check your inbox and spam folder."
-            if sent
-            else ""
-        )
+        auth_notice="If an unverified account matches this address, a verification email will be sent. Check your inbox and spam folder."
     ), 202
 
 
@@ -1081,7 +1120,7 @@ def request_password_reset():
     except ValueError:
         pass
     return _auth_template(
-        auth_notice="Email sent"
+        auth_notice="If an account matches this address, a password reset email will be sent."
     ), 202
 
 
@@ -1480,6 +1519,7 @@ def confirm_task_duplicate():
 
 @app.route("/api/chat", methods=["POST"])
 @login_required
+@limiter.limit("30 per minute")
 def chat():
     mark_trace("chat.route.enter")
     data = _request_data() or {}
@@ -1528,6 +1568,7 @@ def chat():
         period_end,
         ai_limit,
         billable=billable,
+        conversation_id=conversation_id,
     )
     mark_trace(
         "usage.reserved",
@@ -1550,6 +1591,11 @@ def chat():
     if reservation["state"] == "completed":
         mark_trace("idempotency.cached_response")
         return jsonify(reservation["response"]), reservation["response_status"]
+    if reservation["state"] == "response_expired":
+        return jsonify({
+            "error": "This earlier response is no longer available. Send a new message to continue.",
+            "code": "cached_response_unavailable",
+        }), 410
     try:
         step_started_at = time.perf_counter()
         result = process_message_with_metadata(
@@ -1599,10 +1645,15 @@ def chat():
         }
         account_store.complete_ai_request(current_user.id, request_id, response, response_status=403)
         return jsonify(response), 403
-    except Exception:
+    except Exception as error:
         account_store.release_ai_request(current_user.id, request_id)
-        mark_trace("chat.failed")
-        app.logger.exception("Failed to process chat message")
+        request_ref = hashlib.sha256(request_id.encode("utf-8")).hexdigest()[:12]
+        mark_trace("chat.failed", error_type=type(error).__name__)
+        app.logger.error(
+            "chat_request_failed request_ref=%s error_type=%s",
+            request_ref,
+            type(error).__name__,
+        )
         return jsonify({"error": "Ennoic couldn't process that message."}), 500
 
 

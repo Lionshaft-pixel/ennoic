@@ -69,6 +69,119 @@ class AccountTestCase(unittest.TestCase):
 
 
 class AccountAuthenticationTests(AccountTestCase):
+    def test_email_links_use_configured_origin_not_host_or_forwarded_host(self):
+        user = self.create_verified_user("canonical-links@example.com")
+        with patch.dict(os.environ, {
+            "ENNOIC_PUBLIC_ORIGIN": "https://ennoic.onrender.com",
+            "RESEND_API_KEY": "configured-for-test",
+            "RESEND_FROM_EMAIL": "Ennoic <test@example.com>",
+        }), patch("app._send_account_email", return_value=True) as send_email:
+            with app.app.test_request_context(
+                "/ignored",
+                headers={"Host": "attacker.example", "X-Forwarded-Host": "attacker.example"},
+            ):
+                self.assertTrue(app._send_token_email(user, "reset"))
+                self.assertTrue(app._send_token_email(user, "verify"))
+
+        sent_bodies = [call.args[2] for call in send_email.call_args_list]
+        self.assertEqual(len(sent_bodies), 2)
+        self.assertTrue(all("https://ennoic.onrender.com/auth/" in body for body in sent_bodies))
+        self.assertTrue(all("attacker.example" not in body for body in sent_bodies))
+
+    def test_readiness_endpoint_checks_database_without_revealing_errors(self):
+        client = app.app.test_client()
+        with patch("app.database_layer.check_readiness") as probe:
+            live = client.get("/healthz")
+            ready = client.get("/readyz")
+        self.assertEqual(live.status_code, 200)
+        self.assertEqual(ready.status_code, 200)
+        self.assertEqual(ready.get_json(), {"status": "ready"})
+        probe.assert_called_once_with(timeout_seconds=2)
+
+        with patch("app.database_layer.check_readiness", side_effect=RuntimeError("private dsn details")):
+            unavailable = client.get("/readyz")
+        self.assertEqual(unavailable.status_code, 503)
+        self.assertEqual(unavailable.get_json(), {"status": "not_ready"})
+        self.assertNotIn(b"private dsn details", unavailable.data)
+
+    def test_continue_auth_uses_same_notice_for_unknown_and_wrong_password(self):
+        known = self.create_verified_user("known-account@example.com")
+        client = app.app.test_client()
+        token = self.csrf_token(client)
+        delivery = {
+            "ENNOIC_SMTP_HOST": "smtp.example.invalid",
+            "ENNOIC_SMTP_FROM": "no-reply@example.invalid",
+            "SMTP_HOST": "",
+            "SMTP_FROM_EMAIL": "",
+            "RESEND_API_KEY": "",
+            "RESEND_FROM_EMAIL": "",
+        }
+        with patch.dict(os.environ, delivery), patch("app._send_token_email", return_value=True):
+            existing = client.post("/auth/continue", data={
+                "csrf_token": token,
+                "email": known["email"],
+                "password": "different-valid-password-88",
+            })
+            new = client.post("/auth/continue", data={
+                "csrf_token": token,
+                "email": "unknown-account@example.com",
+                "password": "different-valid-password-88",
+            })
+        self.assertEqual((existing.status_code, new.status_code), (202, 202))
+        self.assertEqual(self.auth_context(existing)["notice"], self.auth_context(new)["notice"])
+        self.assertIsNotNone(account_store.get_user_by_email("unknown-account@example.com"))
+
+    def test_mocked_google_callback_uses_canonical_redirect_uri_and_authenticates(self):
+        user = self.create_verified_user("oauth-user@example.com")
+
+        class FakeTokenResponse:
+            def raise_for_status(self):
+                return None
+
+            @staticmethod
+            def json():
+                return {"id_token": "test-id-token"}
+
+        client = app.app.test_client()
+        oauth_state = "test-oauth-state"
+        oauth_nonce = "test-oauth-nonce"
+        with client.session_transaction(base_url="https://attacker.example") as session:
+            session["google_oauth"] = {
+                "state": oauth_state,
+                "nonce": oauth_nonce,
+                "verifier": "test-pkce-verifier",
+            }
+        oauth_environment = {
+            "ENNOIC_GOOGLE_CLIENT_ID": "test-google-client-id",
+            "ENNOIC_GOOGLE_CLIENT_SECRET": "test-google-client-secret",
+            "ENNOIC_PUBLIC_ORIGIN": "https://ennoic.onrender.com",
+        }
+        claims = {
+            "nonce": oauth_nonce,
+            "email": user["email"],
+            "email_verified": True,
+        }
+        with patch.dict(os.environ, oauth_environment), patch(
+            "app.requests.post", return_value=FakeTokenResponse()
+        ) as exchange, patch(
+            "google.oauth2.id_token.verify_oauth2_token", return_value=claims
+        ):
+            response = client.get(
+                f"/auth/google/callback?state={oauth_state}&code=test-code",
+                base_url="https://attacker.example",
+                headers={"X-Forwarded-Host": "forwarded-attacker.example"},
+            )
+
+        self.assertEqual(response.status_code, 302, response.get_data(as_text=True))
+        self.assertTrue(
+            client.get("/api/auth/me", base_url="https://attacker.example")
+            .get_json()["authenticated"]
+        )
+        self.assertEqual(
+            exchange.call_args.kwargs["data"]["redirect_uri"],
+            "https://ennoic.onrender.com/auth/google/callback",
+        )
+
     def test_password_hashing_uses_memory_safe_parameters_and_accepts_legacy_scrypt(self):
         user = account_store.create_user("hashing@example.com", "correct-horse-battery-7")
         self.assertTrue(user["password_hash"].startswith("pbkdf2:sha256:600000$"))
@@ -293,7 +406,8 @@ class AccountAuthenticationTests(AccountTestCase):
             f"'nonce-{nonce.group(1).decode()}'".encode(),
             response.headers["Content-Security-Policy"].encode(),
         )
-        self.assertIn(b"'strict-dynamic' 'unsafe-eval' blob:", response.headers["Content-Security-Policy"].encode())
+        self.assertIn(b"'strict-dynamic' blob:", response.headers["Content-Security-Policy"].encode())
+        self.assertNotIn(b"'unsafe-eval'", response.headers["Content-Security-Policy"].encode())
         self.assertIn("Get started free", landing_page)
         self.assertIn('href="/login?form=register"', landing_page)
         self.assertIn('href="#benefits"', landing_page)
@@ -325,7 +439,8 @@ class AccountAuthenticationTests(AccountTestCase):
             f"'nonce-{nonce.group(1).decode()}'".encode(),
             login_page.headers["Content-Security-Policy"].encode(),
         )
-        self.assertIn(b"'strict-dynamic' 'unsafe-eval' blob:", login_page.headers["Content-Security-Policy"].encode())
+        self.assertIn(b"'strict-dynamic' blob:", login_page.headers["Content-Security-Policy"].encode())
+        self.assertNotIn(b"'unsafe-eval'", login_page.headers["Content-Security-Policy"].encode())
         self.assertEqual(self.auth_context(login_page)["activeForm"], "login")
         register_page = client.get("/login?form=register")
         self.assertEqual(register_page.status_code, 200)

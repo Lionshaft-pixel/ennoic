@@ -3,14 +3,17 @@ import re
 import tempfile
 import threading
 import unittest
+from contextlib import redirect_stdout
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from io import StringIO
 from unittest.mock import Mock, patch
 
 import account_store
 import app
 import billing
 import entitlements
+import main
 import task_store
 
 
@@ -121,19 +124,78 @@ class EntitlementTests(unittest.TestCase):
         conversation = account_store.create_conversation(user["id"], "retry-chat", "Retry")
         request = {
             "conversation_id": conversation["id"],
-            "message": "Summarize this idea",
+            "message": "Summarize this private-marker-should-not-be-logged",
             "request_id": "retryable-request-identifier-01",
         }
         with patch("app.process_message_with_metadata", side_effect=[
-            RuntimeError("temporary model failure"),
+            RuntimeError("private-provider-response-marker"),
             {"reply": "Recovered", "truncated": False, "task_confirmations": []},
-        ]):
+        ]), self.assertLogs(app.app.logger, level="ERROR") as captured:
             failed = client.post("/api/chat", json=request)
             self.assertEqual(failed.status_code, 500)
             self.assertEqual(entitlements.account_entitlements(user["id"])["usage"]["ai_requests"]["used"], 0)
             retried = client.post("/api/chat", json=request)
+        self.assertNotIn("private-provider-response-marker", "\n".join(captured.output))
+        self.assertNotIn("private-marker-should-not-be-logged", "\n".join(captured.output))
+        self.assertIn("error_type=RuntimeError", "\n".join(captured.output))
         self.assertEqual(retried.status_code, 200)
         self.assertEqual(entitlements.account_entitlements(user["id"])["usage"]["ai_requests"]["used"], 1)
+
+    def test_ai_answer_is_not_written_to_stdout(self):
+        secret_answer = "private-ai-answer-marker"
+        stdout = StringIO()
+        with patch("main.maybe_handle_task_message", return_value=None), patch(
+            "main.ask_cloud_model",
+            return_value={"content": secret_answer, "finish_reason": "stop"},
+        ), redirect_stdout(stdout):
+            result = main.process_message_with_metadata(
+                "Can you help me plan a weekend?", user_id="test-user"
+            )
+        self.assertEqual(result["reply"], secret_answer)
+        self.assertNotIn(secret_answer, stdout.getvalue())
+
+    def test_deleting_conversation_removes_cached_ai_response_but_keeps_usage(self):
+        user = self.create_user()
+        conversation = account_store.create_conversation(user["id"], "cache-delete", "Cache delete")
+        request_id = "cached-request-identifier-123"
+        period_start = "2026-11-01T00:00:00+00:00"
+        reserved = account_store.reserve_ai_request(
+            user["id"], request_id, "cached-hash", period_start,
+            "2026-12-01T00:00:00+00:00", 40, conversation_id=conversation["id"],
+        )
+        self.assertEqual(reserved["state"], "reserved")
+        account_store.complete_ai_request(user["id"], request_id, {"reply": "sensitive-cached-reply"})
+        self.assertEqual(account_store.get_usage(user["id"], "ai_requests", period_start), 1)
+
+        self.assertTrue(account_store.delete_conversation(user["id"], conversation["id"]))
+
+        with account_store.connection() as db:
+            row = db.execute(
+                "SELECT response_json FROM ai_requests WHERE user_id = ? AND request_id = ?",
+                (user["id"], request_id),
+            ).fetchone()
+        self.assertIsNone(row)
+        self.assertEqual(account_store.get_usage(user["id"], "ai_requests", period_start), 1)
+
+    def test_legacy_unassociated_ai_cache_is_cleared_without_changing_usage(self):
+        user = self.create_user()
+        period_start = "2026-11-01T00:00:00+00:00"
+        account_store.reserve_ai_request(
+            user["id"], "orphan-cache-request-01", "orphan-hash", period_start,
+            "2026-12-01T00:00:00+00:00", 40,
+        )
+        account_store.complete_ai_request(
+            user["id"], "orphan-cache-request-01", {"reply": "old-sensitive-cache"}
+        )
+        account_store.initialize()
+        with account_store.connection() as db:
+            row = db.execute(
+                "SELECT response_json, state FROM ai_requests WHERE user_id = ? AND request_id = ?",
+                (user["id"], "orphan-cache-request-01"),
+            ).fetchone()
+        self.assertIsNone(row["response_json"])
+        self.assertEqual(row["state"], "completed")
+        self.assertEqual(account_store.get_usage(user["id"], "ai_requests", period_start), 1)
 
     def test_memory_limit_blocks_new_entries_but_preserves_and_updates_existing(self):
         user = self.create_user()

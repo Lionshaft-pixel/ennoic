@@ -101,6 +101,29 @@ def database_key():
     return str(path.resolve())
 
 
+def check_readiness(timeout_seconds=2):
+    """Run a bounded connectivity probe without exposing connection details."""
+    timeout_seconds = max(1, int(timeout_seconds))
+    if uses_postgres():
+        if psycopg is None:
+            raise RuntimeError("PostgreSQL driver is unavailable.")
+        timeout_ms = timeout_seconds * 1000
+        raw = psycopg.connect(
+            os.environ["DATABASE_URL"],
+            connect_timeout=timeout_seconds,
+            options=f"-c statement_timeout={timeout_ms}",
+            autocommit=True,
+        )
+    else:
+        path = Path(os.environ.get("ENNOIC_TASK_DB", DEFAULT_DATABASE_PATH))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        raw = sqlite3.connect(path, timeout=timeout_seconds)
+    try:
+        raw.execute("SELECT 1").fetchone()
+    finally:
+        raw.close()
+
+
 def connect():
     started_at = time.perf_counter()
     if uses_postgres():

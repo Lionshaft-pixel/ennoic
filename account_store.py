@@ -179,6 +179,7 @@ def initialize():
                 user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 request_id TEXT NOT NULL,
                 period_start TEXT NOT NULL,
+                conversation_id TEXT,
                 request_hash TEXT NOT NULL,
                 state TEXT NOT NULL CHECK (state IN ('reserved', 'completed', 'failed')),
                 billable INTEGER NOT NULL DEFAULT 1 CHECK (billable IN (0, 1)),
@@ -267,6 +268,8 @@ def initialize():
         }
         if "billable" not in ai_request_columns:
             db.execute("ALTER TABLE ai_requests ADD COLUMN billable INTEGER NOT NULL DEFAULT 1")
+        if "conversation_id" not in ai_request_columns:
+            db.execute("ALTER TABLE ai_requests ADD COLUMN conversation_id TEXT")
         db.execute(
             """
             CREATE TABLE IF NOT EXISTS account_tokens (
@@ -306,6 +309,18 @@ def initialize():
         db.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS memories_user_person_object "
             "ON memories(user_id, lower(person), lower(object))"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS ai_requests_conversation "
+            "ON ai_requests(user_id, conversation_id)"
+        )
+        # Older cache rows have no reliable conversation association. Clear only
+        # their response bodies; account_usage remains the authoritative ledger.
+        db.execute(
+            "UPDATE ai_requests SET response_json = NULL WHERE response_json IS NOT NULL AND "
+            "(conversation_id IS NULL OR NOT EXISTS ("
+            "SELECT 1 FROM conversations WHERE conversations.id = ai_requests.conversation_id "
+            "AND conversations.user_id = ai_requests.user_id))"
         )
         for table in ("tasks", "task_proposals"):
             columns = {
@@ -771,6 +786,10 @@ def update_conversation(user_id, conversation_id, *, title=None, pinned=None, me
 def delete_conversation(user_id, conversation_id):
     with connection() as db:
         db.execute(
+            "DELETE FROM ai_requests WHERE user_id = ? AND conversation_id = ?",
+            (user_id, conversation_id),
+        )
+        db.execute(
             "DELETE FROM task_proposals WHERE conversation_id = ? AND user_id = ?",
             (conversation_id, user_id),
         )
@@ -783,6 +802,10 @@ def delete_conversation(user_id, conversation_id):
 
 def delete_all_conversations(user_id):
     with connection() as db:
+        db.execute(
+            "DELETE FROM ai_requests WHERE user_id = ? AND conversation_id IS NOT NULL",
+            (user_id,),
+        )
         db.execute("DELETE FROM task_proposals WHERE user_id = ?", (user_id,))
         cursor = db.execute("DELETE FROM conversations WHERE user_id = ?", (user_id,))
     return cursor.rowcount
@@ -919,7 +942,8 @@ def get_usage(user_id, meter, period_start):
     return row["used"] if row else 0
 
 
-def reserve_ai_request(user_id, request_id, request_hash, period_start, period_end, monthly_limit, *, billable=True):
+def reserve_ai_request(user_id, request_id, request_hash, period_start, period_end, monthly_limit,
+                       *, billable=True, conversation_id=None):
     now = _now()
     with connection() as db:
         _begin_user_write(db, user_id)
@@ -937,6 +961,11 @@ def reserve_ai_request(user_id, request_id, request_hash, period_start, period_e
             if existing["request_hash"] != request_hash:
                 return {"state": "conflict", "used": used, "limit": monthly_limit, "period_end": period_end}
             if existing["state"] == "completed":
+                if existing["response_json"] is None:
+                    return {
+                        "state": "response_expired", "used": used, "limit": monthly_limit,
+                        "period_end": period_end,
+                    }
                 return {
                     "state": "completed", "used": used, "limit": monthly_limit,
                     "period_end": period_end,
@@ -979,14 +1008,15 @@ def reserve_ai_request(user_id, request_id, request_hash, period_start, period_e
             )
         db.execute(
             """
-            INSERT INTO ai_requests (user_id, request_id, period_start, request_hash, state, response_json,
+            INSERT INTO ai_requests (user_id, request_id, period_start, conversation_id, request_hash, state, response_json,
                 response_status, billable, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'reserved', NULL, NULL, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, 'reserved', NULL, NULL, ?, ?, ?)
             ON CONFLICT(user_id, request_id) DO UPDATE SET period_start = excluded.period_start,
-                request_hash = excluded.request_hash, state = 'reserved', response_json = NULL,
+                conversation_id = excluded.conversation_id, request_hash = excluded.request_hash,
+                state = 'reserved', response_json = NULL,
                 response_status = NULL, billable = excluded.billable, updated_at = excluded.updated_at
             """,
-            (user_id, request_id, period_start, request_hash, int(billable), now, now),
+            (user_id, request_id, period_start, conversation_id, request_hash, int(billable), now, now),
         )
         return {"state": "reserved", "used": used + int(billable), "limit": monthly_limit, "period_end": period_end}
 

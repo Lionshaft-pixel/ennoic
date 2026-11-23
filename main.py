@@ -204,7 +204,7 @@ def process_message_with_metadata(message, history=None, conversation_id=None, *
         try:
             ai_data = json.loads(ai_response)
         except json.JSONDecodeError:
-            print("Model returned invalid JSON!")
+            mark_trace("memory_classifier.invalid_json")
             raise ValueError("The message could not be classified.")
 
     mode = ai_data["action"]
@@ -271,8 +271,6 @@ def process_message_with_metadata(message, history=None, conversation_id=None, *
         response = completion["content"]
         truncated = completion["finish_reason"] == "length"
 
-        print(response)
-
     elif mode == "forget":
         object = ai_data["object"]
         person = ai_data["person"]
@@ -292,8 +290,6 @@ def process_message_with_metadata(message, history=None, conversation_id=None, *
         response = completion["content"]
         truncated = completion["finish_reason"] == "length"
 
-        print(response)
-        
     else:
         response = "I couldn't process that request."
 
