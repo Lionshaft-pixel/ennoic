@@ -29,6 +29,7 @@ import database as database_layer
 import entitlements
 import paddle_billing
 import task_store
+from discord_notifications import notify_discord
 from main import process_message_with_metadata
 from task_management import message_requires_ai, resolve_task_confirmation
 from latency_trace import begin_trace, end_trace, mark_trace
@@ -259,6 +260,12 @@ def add_security_headers(response):
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     if response.mimetype == "text/html":
         response.headers.setdefault("Cache-Control", "no-store")
+    if response.status_code >= 500 and not getattr(g, "discord_error_notified", False):
+        notify_discord(
+            "server_error",
+            endpoint=request.endpoint or "unknown",
+            error_type=f"HTTP{response.status_code}",
+        )
     end_trace(response.status_code)
     return response
 
@@ -290,6 +297,18 @@ def handle_request_too_large(error):
     if request.path.startswith("/api/"):
         return jsonify({"error": "The request is too large."}), 413
     return "The request is too large.", 413
+
+
+@app.errorhandler(500)
+def handle_internal_server_error(error):
+    original = getattr(error, "original_exception", None)
+    g.discord_error_notified = True
+    notify_discord(
+        "server_error",
+        endpoint=request.endpoint or "unknown",
+        error_type=type(original or error).__name__,
+    )
+    return error
 
 
 def _request_data():
@@ -957,6 +976,8 @@ def google_callback():
         user = account_store.get_user_by_email(email)
         if user is None:
             user = account_store.create_user(email, secrets.token_urlsafe(48))
+            if user is not None:
+                notify_discord("registration")
             if user is None:
                 # Another callback may have created this address at the same time.
                 user = account_store.get_user_by_email(email)
@@ -976,6 +997,7 @@ def google_callback():
     session["account_auth_version"] = user["auth_version"]
     session.permanent = True
     account_store.record_user_login(user["id"], request.remote_addr)
+    notify_discord("login")
     return _post_login_redirect()
 
 
@@ -992,6 +1014,7 @@ def register():
     except ValueError as exc:
         return _auth_template(auth_error=str(exc), active_form="register"), 400
     if user:
+        notify_discord("registration")
         _send_token_email(user, "verify")
     return _auth_template(
         auth_notice="If this address can be registered, a verification link will be sent. Check your inbox and spam folder.",
@@ -1035,6 +1058,7 @@ def continue_auth():
         session["account_auth_version"] = user["auth_version"]
         session.permanent = True
         account_store.record_user_login(user["id"], request.remote_addr)
+        notify_discord("login")
         return _post_login_redirect()
 
     if not _email_delivery_configured():
@@ -1054,8 +1078,10 @@ def continue_auth():
             session["account_auth_version"] = user["auth_version"]
             session.permanent = True
             account_store.record_user_login(user["id"], request.remote_addr)
+            notify_discord("login")
             return _post_login_redirect()
     else:
+        notify_discord("registration")
         _send_token_email(user, "verify")
     return _auth_template(
         auth_notice=_AUTH_CONTINUE_NOTICE
@@ -1087,6 +1113,7 @@ def login():
     session["account_auth_version"] = user["auth_version"]
     session.permanent = True
     account_store.record_user_login(user["id"], request.remote_addr)
+    notify_discord("login")
     return _post_login_redirect()
 
 
@@ -1181,6 +1208,8 @@ def change_password():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     if not account_store.update_password(user["id"], data["new_password"]):
+        g.discord_error_notified = True
+        notify_discord("server_error", endpoint="change_password", error_type="PasswordUpdateFailed")
         return jsonify({"error": "The password could not be changed."}), 500
     updated = account_store.get_user(user["id"])
     logout_user()
@@ -1233,6 +1262,10 @@ def delete_account():
     try:
         deletion = pending or account_store.schedule_user_deletion(user_id, request.remote_addr)
     except Exception as exc:
+        g.discord_error_notified = True
+        notify_discord(
+            "server_error", endpoint="delete_account", error_type=type(exc).__name__
+        )
         app.logger.error(
             "account_deletion_schedule_failed error_type=%s",
             type(exc).__name__,
@@ -1246,6 +1279,8 @@ def delete_account():
             message = "Ennoic couldn't schedule account deletion. Your account remains available; retry the request."
         return jsonify({"error": message}), 503
     if deletion is None:
+        g.discord_error_notified = True
+        notify_discord("server_error", endpoint="delete_account", error_type="DeletionScheduleFailed")
         return jsonify({"error": "The account could not be scheduled for deletion."}), 500
     session["account_deletion_id"] = user_id
     return jsonify({"scheduled": True, "purge_after": deletion["purge_after"]}), 202
@@ -1458,7 +1493,8 @@ def tasks():
     if data is None:
         return jsonify({"error": "Task details must be a JSON object."}), 400
     try:
-        return jsonify({"task": task_store.create_task(data, user_id=current_user.id)}), 201
+        task = task_store.create_task(data, user_id=current_user.id)
+        return jsonify({"task": task}), 201
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -1674,6 +1710,13 @@ def chat():
             request_ref,
             type(error).__name__,
             error_location,
+        )
+        g.discord_error_notified = True
+        notify_discord(
+            "chat_error",
+            reference=request_ref,
+            error_type=type(error).__name__,
+            location=error_location,
         )
         return jsonify({"error": "Ennoic couldn't process that message."}), 500
 

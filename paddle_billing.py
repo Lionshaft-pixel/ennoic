@@ -12,6 +12,8 @@ from urllib.parse import quote
 
 import requests
 
+from discord_notifications import notify_discord
+
 import account_store
 
 
@@ -268,7 +270,7 @@ def process_webhook(raw_body, signature):
     elif status == "canceled" and data.get("canceled_at"):
         cancel_at = _parse_timestamp(data.get("canceled_at"), "cancellation date")
     provider_updated_at = _parse_timestamp(data.get("updated_at"), "subscription update timestamp") if data.get("updated_at") else None
-    return account_store.apply_paddle_subscription_event(
+    processed = account_store.apply_paddle_subscription_event(
         event_id=event_id,
         occurred_at=occurred_at,
         provider_updated_at=provider_updated_at,
@@ -284,6 +286,9 @@ def process_webhook(raw_body, signature):
         event_source=event_source,
         allow_expired_intent=True,
     )
+    if processed and status == "active" and event_type in {"subscription.created", "subscription.activated"}:
+        notify_discord("pro_activated", environment=env)
+    return processed
 
 
 class PaddleAPI:

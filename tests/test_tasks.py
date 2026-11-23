@@ -68,6 +68,15 @@ class TaskStoreTests(unittest.TestCase):
         )[0]
         self.assertEqual(child["parent_task_id"], parent["id"])
 
+    def test_successful_task_batch_queues_one_count_only_notification(self):
+        with patch("task_store.notify_discord") as notify:
+            created = task_store.create_tasks(
+                [{"title": "Private title one"}, {"title": "Private title two"}],
+                user_id="notification-test-user",
+            )
+        self.assertEqual(len(created), 2)
+        notify.assert_called_once_with("task_created", count=2)
+
     def test_invalid_priority_type_returns_validation_error(self):
         with self.assertRaisesRegex(ValueError, "Priority"):
             task_store.create_task({"title": "Prepare presentation", "priority": []})

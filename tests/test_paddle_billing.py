@@ -132,9 +132,11 @@ class PaddleBillingTests(unittest.TestCase):
             self.user["id"], "sandbox", "pri_sandbox_monthly"
         )
         body, signature = self.signed(self.subscription_event(intent=token))
-        webhook = client.post("/api/paddle/webhook", data=body, headers={"Paddle-Signature": signature})
+        with patch("paddle_billing.notify_discord") as notify:
+            webhook = client.post("/api/paddle/webhook", data=body, headers={"Paddle-Signature": signature})
         self.assertEqual(webhook.status_code, 200)
         self.assertTrue(webhook.get_json()["processed"])
+        notify.assert_called_once_with("pro_activated", environment="sandbox")
         refreshed_home = client.get("/").get_data(as_text=True)
         self.assertRegex(refreshed_home, r'id="account-pro-badge"[^>]*>PRO</span>')
         refreshed_settings = client.get("/settings").get_data(as_text=True)

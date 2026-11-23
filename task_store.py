@@ -6,6 +6,7 @@ from datetime import date, datetime, timezone
 from difflib import SequenceMatcher
 
 import database as database_layer
+from discord_notifications import notify_discord
 
 
 TASK_FIELDS = {"title", "description", "project", "due_date", "priority", "status", "parent_task_id"}
@@ -244,6 +245,8 @@ def create_tasks(tasks, parent_task_id=None, *, user_id=None):
                 )
     except database_layer.INTEGRITY_ERRORS as exc:
         raise ValueError("The parent task could not be found.") from exc
+    if created:
+        notify_discord("task_created", count=len(created))
     return created
 
 
@@ -343,6 +346,8 @@ def stage_task_batch(tasks, conversation_id, *, user_id=None):
                     "candidates": candidates,
                 }
             )
+    if created:
+        notify_discord("task_created", count=len(created))
     return {"created": created, "proposals": proposals}
 
 

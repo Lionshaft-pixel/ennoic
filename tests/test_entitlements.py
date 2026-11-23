@@ -130,11 +130,16 @@ class EntitlementTests(unittest.TestCase):
         with patch("app.process_message_with_metadata", side_effect=[
             RuntimeError("private-provider-response-marker"),
             {"reply": "Recovered", "truncated": False, "task_confirmations": []},
-        ]), self.assertLogs(app.app.logger, level="ERROR") as captured:
+        ]), patch("app.notify_discord") as notify, self.assertLogs(app.app.logger, level="ERROR") as captured:
             failed = client.post("/api/chat", json=request)
             self.assertEqual(failed.status_code, 500)
             self.assertEqual(entitlements.account_entitlements(user["id"])["usage"]["ai_requests"]["used"], 0)
             retried = client.post("/api/chat", json=request)
+        notify.assert_called_once()
+        self.assertEqual(notify.call_args.args[0], "chat_error")
+        self.assertEqual(notify.call_args.kwargs["error_type"], "RuntimeError")
+        self.assertNotIn("private-provider-response-marker", str(notify.call_args))
+        self.assertNotIn("private-marker-should-not-be-logged", str(notify.call_args))
         self.assertNotIn("private-provider-response-marker", "\n".join(captured.output))
         self.assertNotIn("private-marker-should-not-be-logged", "\n".join(captured.output))
         self.assertIn("error_type=RuntimeError", "\n".join(captured.output))

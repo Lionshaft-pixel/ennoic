@@ -327,7 +327,7 @@ class AccountAuthenticationTests(AccountTestCase):
         self.assertEqual(response.status_code, 400)
         csrf_token = self.csrf_token(client)
         with patch.dict(os.environ, {"ENNOIC_SMTP_HOST": "mail.invalid", "ENNOIC_SMTP_FROM": "no-reply@example.com"}):
-            with patch("app._send_token_email", return_value=True):
+            with patch("app._send_token_email", return_value=True), patch("app.notify_discord") as notify:
                 response = client.post(
                     "/auth/register",
                     data={
@@ -336,6 +336,7 @@ class AccountAuthenticationTests(AccountTestCase):
                         "password": "correct-horse-battery-7",
                     },
                 )
+        notify.assert_called_once_with("registration")
         self.assertEqual(response.status_code, 202)
         self.assertNotIn(b"new@example.com", response.data)
         user = account_store.get_user_by_email("new@example.com")
@@ -346,14 +347,16 @@ class AccountAuthenticationTests(AccountTestCase):
         self.assertEqual(client.get(f"/auth/verify/{token}").status_code, 200)
         self.assertTrue(account_store.get_user(user["id"])["email_verified"])
         login_token = self.csrf_token(client)
-        response = client.post(
-            "/auth/login",
-            data={
-                "csrf_token": login_token,
-                "email": "new@example.com",
-                "password": "correct-horse-battery-7",
-            },
-        )
+        with patch("app.notify_discord") as notify:
+            response = client.post(
+                "/auth/login",
+                data={
+                    "csrf_token": login_token,
+                    "email": "new@example.com",
+                    "password": "correct-horse-battery-7",
+                },
+            )
+        notify.assert_called_once_with("login")
         self.assertEqual(response.status_code, 302)
         self.assertTrue(client.get("/api/auth/me").get_json()["authenticated"])
         self.assertEqual(client.post("/auth/logout").status_code, 400)

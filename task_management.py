@@ -5,6 +5,7 @@ from datetime import date
 
 from models import ask_cloud_model
 import task_store
+from discord_notifications import notify_discord
 
 
 TASK_LANGUAGE_PATTERN = re.compile(
@@ -102,6 +103,8 @@ def resolve_task_confirmation(proposal_id, choice, candidate_id=None, *, user_id
     )
     if result is None:
         return None
+    if result.get("created"):
+        notify_discord("task_created", count=1)
     response = _format_confirmation_result(result)
     response["resolved_proposal_id"] = proposal_id
     return response
