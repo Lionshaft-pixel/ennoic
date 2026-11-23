@@ -1685,6 +1685,12 @@ def chat():
         )
         account_store.complete_ai_request(current_user.id, request_id, result)
         mark_trace("conversation.persisted", duration_ms=round((time.perf_counter() - step_started_at) * 1000))
+        notify_discord(
+            "chat_response",
+            email=current_user.email,
+            message=message.strip(),
+            reply=result.get("reply", ""),
+        )
         return jsonify(result)
     except account_store.MemoryCapacityReached as exc:
         response = {

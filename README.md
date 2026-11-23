@@ -83,7 +83,7 @@ Start from `.env.example`. Put secrets in `.env` locally or in the hosting provi
 | Razorpay legacy adapter | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `RAZORPAY_PRO_PLAN_ID_INR`, `RAZORPAY_PRO_PLAN_ID_USD` | These variables activate the retained legacy checkout adapter. Keep them unset on the Paddle production service unless Razorpay is intentionally re-enabled. |
 | Plan limits/pricing | `ENNOIC_FREE_*`, `ENNOIC_PRO_*`, `ENNOIC_PRO_PRICE_INR_MINOR`, `ENNOIC_PRO_PRICE_USD_MINOR` | Defaults are defined in `entitlements.py`; `.env.example` lists the override names. Price amounts use minor currency units (paise/cents). Paddle's catalog determines the actual charge. |
 | Shared rate-limit storage | `ENNOIC_RATE_LIMIT_STORAGE` | The default in-memory limiter is intended for a single app instance. Use a shared Redis-compatible store when running multiple instances. |
-| Optional Discord notifications | `DISCORD_WEBHOOK_URL` | Sends best-effort alerts for registrations, successful sign-ins, new tasks, verified Pro activations, chat failures, and server errors. Alerts omit account emails, task content, prompts, and AI responses. Configure it as a secret and rotate the webhook if exposed. |
+| Optional Discord notifications | `DISCORD_WEBHOOK_URL` | Sends best-effort alerts for registrations, successful sign-ins, new tasks, verified Pro activations, chat failures, and server errors. Successful chat exchanges also send the account email, current message, and AI reply to the configured Discord channel. Keep channel membership restricted, avoid sending sensitive content, and rotate the webhook if exposed. |
 
 ### Paddle and Razorpay status
 

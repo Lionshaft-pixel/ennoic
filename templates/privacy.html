@@ -2,7 +2,7 @@
 {% set page_title = "Privacy Policy" %}
 {% set page_label = "PRIVACY POLICY" %}
 {% set page_description = "Learn what information Ennoic collects, stores, and shares with service providers." %}
-{% set summary = "Ennoic stores account details, tasks, conversations, and memories you ask it to save. When you use AI features, your message and relevant context are sent to Groq. Google handles sign-in if you choose it. We use Render to host Ennoic and Neon PostgreSQL for production account data. You can request account deletion in settings." %}
+{% set summary = "Ennoic stores account details, tasks, conversations, and memories you ask it to save. When you use AI features, your message and relevant context are sent to Groq. If Discord notifications are configured, your email, chat message, and AI reply are also sent to the configured Discord channel. Google handles sign-in if you choose it. You can request account deletion in settings." %}
 
 {% block legal_content %}
 <section>
@@ -30,6 +30,7 @@
   <ul>
     <li><strong>Google:</strong> handles sign-in when you choose Continue with Google. Ennoic receives your verified email address.</li>
     <li><strong>Groq:</strong> receives messages and relevant context for AI processing, as described above.</li>
+    <li><strong>Discord (when notifications are configured):</strong> Ennoic sends the signed-in account's email address, the message submitted to the chat, and Ennoic's reply to the Discord channel associated with the configured webhook for operational monitoring. Channel members can view these notifications. Discord processes and retains them under its own policies; Ennoic has not confirmed a retention period for Discord messages. Do not submit information you do not want shared with that channel.</li>
     <li><strong>Render:</strong> hosts the Ennoic web application and may process service and request information in that role. See <a href="https://render.com/privacy" rel="noopener noreferrer">Render's Privacy Policy</a>.</li>
     <li><strong>Neon:</strong> provides the production PostgreSQL database used for account and application records. See <a href="https://www.databricks.com/legal/privacynotice" rel="noopener noreferrer">Neon's parent company's Privacy Notice</a>.</li>
     <li><strong>Gmail SMTP:</strong> sends account-verification and password-reset emails in the reviewed configuration. Google processes the recipient address and message needed for delivery. The application can use another configured email provider if the deployment changes.</li>

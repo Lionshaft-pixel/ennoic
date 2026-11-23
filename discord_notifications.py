@@ -23,6 +23,7 @@ _EVENT_LABELS = {
     "task_created": "New task created",
     "pro_activated": "Ennoic Pro subscription activated",
     "chat_error": "AI chat request failed",
+    "chat_response": "AI chat exchange",
     "server_error": "Application server error",
 }
 _SAFE_VALUE = re.compile(r"^[A-Za-z0-9_.:/-]{1,100}$")
@@ -54,6 +55,16 @@ def _safe_value(value):
     return "unknown"
 
 
+def _bounded_content(value, limit):
+    if not isinstance(value, str):
+        return "(unavailable)"
+    # Keep line breaks readable while excluding control characters from webhook content.
+    value = "".join(char for char in value if char in "\n\t" or char.isprintable())
+    if len(value) > limit:
+        return value[:limit] + "…"
+    return value or "(empty)"
+
+
 def _format_message(event, details=None):
     label = _EVENT_LABELS.get(event)
     if label is None:
@@ -74,6 +85,12 @@ def _format_message(event, details=None):
             f"Reference: {_safe_value(details.get('reference'))}",
             f"Error: {_safe_value(details.get('error_type'))}",
             f"Location: {_safe_value(details.get('location'))}",
+        ))
+    elif event == "chat_response":
+        lines.extend((
+            f"User: {_bounded_content(details.get('email'), 254)}",
+            f"Message: {_bounded_content(details.get('message'), 600)}",
+            f"Ennoic replied: {_bounded_content(details.get('reply'), 900)}",
         ))
     elif event == "server_error":
         lines.extend((
