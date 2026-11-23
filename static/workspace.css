@@ -161,7 +161,6 @@ button:disabled { cursor: not-allowed; }
 .composer-bar { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
 .composer .send { width: 32px; height: 32px; border-radius: 9px; background: var(--text); color: var(--panel); }
 .composer .send:disabled { opacity: .3; }
-.attach-disabled { min-height: 29px; padding: 0 8px; opacity: .58; font-size: 11.5px; }
 .composer-hint { width: min(100%, 620px); margin: 7px auto 0; color: var(--muted); font-size: 10px; text-align: center; }
 .composer-chips { margin: 8px 0 0 27px; color: var(--muted); font-size: 11px; }
 
@@ -332,7 +331,6 @@ body { display: block; padding: 0; }
   font-size: var(--composer-font-size);
   line-height: 1.5;
 }
-.attach-disabled { min-height: var(--composer-control-size); align-self: flex-start; }
 .composer .send { flex: none; }
 .composer-hint { width: min(100%, 720px); }
 .message { font-size: 15px; }
@@ -345,12 +343,6 @@ body { display: block; padding: 0; }
   gap: 10px;
   padding: 10px;
 }
-.attach-disabled {
-  gap: 8px;
-  padding: 0 11px;
-  font-size: 13px;
-}
-.attach-disabled .rail-icon { width: 16px; height: 16px; }
 .composer .send { width: var(--composer-control-size); height: var(--composer-control-size); border-radius: 11px; }
 .composer .send .rail-icon { width: 19px; height: 19px; }
 
@@ -396,9 +388,6 @@ body { display: block; padding: 0; }
   .orb { width: 38px; height: 38px; margin-bottom: 12px; }
   .hero h1 { font-size: 19px; }
   .composer { gap: 7px; padding: 8px; }
-  .attach-disabled { width: 40px; min-width: 40px; min-height: 42px; justify-content: center; padding: 0; overflow: hidden; color: transparent; }
-  .attach-disabled .rail-icon { color: var(--text); }
-  .attach-disabled span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
   .ennoic-app {
     --assistant-message-size: 1rem;
     --assistant-message-leading: 1.75;
@@ -406,7 +395,6 @@ body { display: block; padding: 0; }
     --composer-control-size: 36px;
   }
   .composer textarea { padding: 6px 1px; }
-  .attach-disabled { min-height: var(--composer-control-size); }
   .composer .send { width: var(--composer-control-size); height: var(--composer-control-size); }
   .composer .send .rail-icon { width: 18px; height: 18px; }
   .message { font-size: 14.5px; }

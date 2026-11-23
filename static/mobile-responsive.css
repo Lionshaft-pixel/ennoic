@@ -1,6 +1,18 @@
 /* Responsive-only overrides. These rules intentionally do not affect desktop layouts. */
 
 @media (max-width: 940px) {
+  a,
+  button,
+  input,
+  textarea,
+  select,
+  summary,
+  [role="button"],
+  [role="tab"],
+  [role="switch"] {
+    -webkit-tap-highlight-color: transparent;
+  }
+
   html.ennoic-landing-document {
     width: 100%;
     max-width: 100%;
@@ -214,9 +226,7 @@
     margin-bottom: 4px;
   }
   .composer textarea { min-height: 58px; height: auto; max-height: 128px; padding: 6px 2px; overflow-y: auto; font-size: 16px; line-height: 1.45; }
-  .attach-disabled,
   .composer .send { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
-  .attach-disabled { justify-content: center; padding: 0; }
   .composer-hint { display: none; }
   dialog { width: calc(100% - 24px); max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); padding: 20px; }
   #task-editor-form input,
@@ -410,6 +420,9 @@
 }
 
 @media (max-width: 760px) {
+  .settings-sidebar .sidebar-toggle,
+  .settings-footer { display: none !important; }
+
   .settings-sidebar {
     padding-top: max(12px, env(safe-area-inset-top));
   }
