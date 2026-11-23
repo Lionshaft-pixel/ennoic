@@ -1,0 +1,442 @@
+/* Responsive-only overrides. These rules intentionally do not affect desktop layouts. */
+
+@media (max-width: 940px) {
+  html.ennoic-landing-document {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+  html.ennoic-auth-document {
+    height: auto !important;
+    min-height: 100%;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+  /* Workspace navigation and drawer */
+  .ennoic-app {
+    display: flex;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .ennoic-app > .rail { display: none; }
+  .ennoic-app > .main { min-height: 0; flex: 1; }
+  .top {
+    height: calc(60px + env(safe-area-inset-top));
+    min-height: calc(60px + env(safe-area-inset-top));
+    gap: 8px;
+    padding: max(6px, env(safe-area-inset-top)) 10px 6px;
+  }
+  .mobile-menu {
+    display: grid;
+    width: 44px;
+    height: 44px;
+    flex: none;
+    place-items: center;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel);
+    color: var(--text);
+  }
+  .mobile-view-switch {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: 1fr 1fr;
+    gap: 3px;
+    padding: 3px;
+    border: 1px solid var(--border);
+    border-radius: 13px;
+    background: var(--surface);
+  }
+  .mobile-view-switch button {
+    min-width: 54px;
+    min-height: 44px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .mobile-view-switch button[aria-pressed="true"] {
+    background: var(--panel);
+    color: var(--text);
+    box-shadow: 0 1px 4px rgb(0 0 0 / 12%);
+  }
+  .restore-tasks { display: none !important; }
+
+  .ennoic-app > .sidebar,
+  .app[data-sidebar="closed"] .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 31;
+    display: flex;
+    width: min(88vw, 330px);
+    height: 100vh;
+    height: 100dvh;
+    min-width: 0;
+    flex-direction: column;
+    padding: max(14px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom));
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    transform: translateX(-105%);
+    visibility: hidden;
+    border: 1px solid var(--border);
+    border-radius: 0 18px 18px 0;
+    background: var(--sidebar);
+    box-shadow: 12px 0 35px rgb(0 0 0 / 24%);
+    transition: transform .2s ease, visibility .2s ease;
+  }
+  .app[data-sidebar="open"] .sidebar {
+    width: min(88vw, 330px);
+    padding: max(14px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom));
+    transform: translateX(0);
+    visibility: visible;
+  }
+  .sidebar-heading { align-items: center; padding-bottom: 14px; }
+  .sidebar-close {
+    display: grid;
+    width: 44px;
+    height: 44px;
+    flex: none;
+    place-items: center;
+  }
+  .sidebar-close .rail-icon { width: 19px; height: 19px; }
+  .btn-new { min-height: 46px; }
+  .search { min-height: 46px; font-size: 16px; }
+  .history { margin-top: 14px; }
+  .history-item { min-height: 44px; }
+  .conversation-menu-trigger { width: 44px; height: 44px; opacity: 1; }
+  .account-menu-user { margin-top: 14px; padding-top: 14px; }
+  .mobile-settings {
+    display: flex;
+    min-height: 46px;
+    align-items: center;
+    margin-top: 8px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    background: var(--panel);
+    text-align: left;
+  }
+  .backdrop {
+    position: fixed;
+    z-index: 30;
+    display: none;
+    background: rgb(0 0 0 / 48%);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .app[data-sidebar="open"] .backdrop { display: block; }
+
+  /* Show exactly one workspace view on phones and tablets. */
+  .workspace-grid {
+    display: block;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0 10px max(10px, env(safe-area-inset-bottom));
+  }
+  .task-dashboard,
+  .app[data-view="tasks"] .task-dashboard { display: none; }
+  .chat-panel,
+  .app[data-view="tasks"] .chat-panel { display: none; }
+  .app[data-mobile-view="chat"] .chat-panel { display: flex; }
+  .app[data-mobile-view="tasks"] .task-dashboard { display: flex; }
+  .panel-divider { display: none !important; }
+  .collapse-tasks { display: none !important; }
+  .task-dashboard {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    padding: 15px 13px 12px;
+    border: 1px solid var(--border);
+    border-radius: 15px;
+    background: var(--panel);
+  }
+  .dashboard-heading { width: 100%; margin-bottom: 12px; }
+  .dashboard-heading h1 { font-size: 1.45rem; }
+  .dashboard-heading .eyebrow,
+  .dashboard-description { display: none; }
+  .dashboard-heading .btn { min-height: 44px; padding-inline: 13px; font-size: 14px; }
+  .task-filters,
+  .task-search,
+  .task-status,
+  .task-list { width: 100%; }
+  .task-filters {
+    flex: none;
+    gap: 4px;
+    margin: 0 0 10px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .task-filters::-webkit-scrollbar { display: none; }
+  .task-filters button {
+    min-height: 44px;
+    flex: none;
+    padding: 0 11px;
+    font-size: 13px;
+  }
+  .task-search { min-height: 46px; margin: 0 0 7px; font-size: 16px; }
+  .task-list { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+  .task-item { gap: 12px; padding: 13px 7px; }
+  .task-check { width: 22px; height: 22px; flex: none; }
+  .task-title { font-size: 1rem; line-height: 1.45; }
+  .task-description { font-size: .9rem; line-height: 1.5; }
+  .task-chip { font-size: .76rem; }
+  .task-actions { flex-direction: row; flex-wrap: wrap; gap: 4px; opacity: 1; }
+  .task-actions button { min-width: 44px; min-height: 44px; padding: 7px; font-size: .8rem; }
+
+  .chat-panel { min-width: 0; min-height: 0; border: 1px solid var(--border); border-radius: 15px; background: var(--panel); }
+  .stage { min-height: 0; overflow: hidden; padding: 0 12px 8px; }
+  .hero { margin: auto 0 18px; }
+  .stage[data-chat-state="empty"] .composer { margin-bottom: 4px !important; }
+  .hero h1 { font-size: clamp(21px, 5.4vw, 25px); }
+  .orb { width: 44px; height: 44px; margin-bottom: 17px; }
+  .thread { width: 100%; min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 12px 2px 18px; }
+  .messages { width: 100%; padding: 10px 0 18px; gap: 17px; }
+  .message,
+  .message.assistant { font-size: 16px; line-height: 1.65; }
+  .message.user { max-width: 92%; padding: 11px 14px; }
+  .composer {
+    width: 100%;
+    flex: none;
+    gap: 8px;
+    padding: 9px;
+    margin-bottom: 4px;
+  }
+  .composer textarea { min-height: 58px; height: auto; max-height: 128px; padding: 6px 2px; overflow-y: auto; font-size: 16px; line-height: 1.45; }
+  .attach-disabled,
+  .composer .send { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
+  .attach-disabled { justify-content: center; padding: 0; }
+  .composer-hint { display: none; }
+  dialog { width: calc(100% - 24px); max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); padding: 20px; }
+  #task-editor-form input,
+  #task-editor-form textarea,
+  #task-editor-form select { min-height: 46px; font-size: 16px; }
+  #task-editor-form textarea { min-height: 90px; }
+  .dialog-actions .btn { min-height: 44px; }
+}
+
+@media (max-width: 480px) {
+  .top { gap: 6px; padding-right: 8px; padding-left: 8px; }
+  .mobile-view-switch button { min-width: 48px; padding-inline: 8px; }
+  .subscription-loading { max-width: 68px; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+  .subscription-retry { min-height: 44px; padding-inline: 5px; }
+  #app-upgrade { min-height: 42px; padding-inline: 10px; font-size: 12px; }
+  .workspace-grid { padding-right: 7px; padding-left: 7px; }
+  .task-dashboard { padding: 13px 10px 10px; }
+  .task-actions button { min-width: 42px; min-height: 42px; }
+}
+
+@media (max-width: 360px) {
+  .mobile-view-switch button { min-width: 42px; padding-inline: 6px; font-size: 13px; }
+  .top { gap: 5px; }
+  .dashboard-heading h1 { font-size: 1.28rem; }
+}
+
+@media (max-width: 940px) {
+  /* Existing uploaded landing page fragment: use the real viewport and reflow its fixed canvas. */
+  body.ennoic-landing-page {
+    display: block;
+    width: 100%;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    background: #0b0504;
+  }
+  body.ennoic-landing-page [data-label="Ennoic landing page"] {
+    width: 100% !important;
+    min-height: 100dvh !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow-x: clip !important;
+    overflow-y: visible !important;
+  }
+  body.ennoic-landing-page [data-label="Ennoic landing page"] > section:first-child {
+    padding: 0 16px 64px !important;
+    overflow: hidden !important;
+  }
+  body.ennoic-landing-page [data-label="Ennoic landing page"] div[style*="max-width:1280px"] {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    padding-top: max(22px, env(safe-area-inset-top)) !important;
+  }
+  body.ennoic-landing-page [data-label="Ennoic landing page"] section > div:has(> nav) {
+    align-items: stretch !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    padding-top: max(22px, env(safe-area-inset-top)) !important;
+  }
+  body.ennoic-landing-page [data-label="Ennoic landing page"] nav:not([aria-label="Legal pages"]) {
+    position: static !important;
+    width: 100% !important;
+    justify-content: center !important;
+    flex-wrap: wrap !important;
+    gap: 6px 16px !important;
+    padding: 11px 12px !important;
+    border-radius: 13px !important;
+    transform: none !important;
+    font-size: 13px !important;
+  }
+  body.ennoic-landing-page [data-label="Ennoic landing page"] div[style*="max-width:900px"] {
+    margin-top: 58px !important;
+    text-align: left !important;
+  }
+  body.ennoic-landing-page [data-label="Ennoic landing page"] div[style*="max-width:900px"] h1 {
+    margin-top: 0 !important;
+    font-size: clamp(42px, 13vw, 60px) !important;
+    line-height: 1.02 !important;
+  }
+  body.ennoic-landing-page [data-label="Ennoic landing page"] div[style*="max-width:900px"] p {
+    margin-top: 18px !important;
+    font-size: 17px !important;
+    line-height: 1.6 !important;
+  }
+  body.ennoic-landing-page [data-label="Ennoic landing page"] div[style*="max-width:900px"] .btn {
+    min-height: 48px;
+    margin-top: 24px !important;
+    padding: 14px 24px !important;
+  }
+  [data-label="Ennoic landing page"] #preview {
+    margin-top: 50px !important;
+    border-radius: 16px !important;
+  }
+  [data-label="Ennoic landing page"] #preview > div:nth-child(2) > div {
+    width: 100% !important;
+    flex-basis: 100% !important;
+    padding: 15px !important;
+    border-right: 0 !important;
+  }
+  [data-label="Ennoic landing page"] #preview > div:first-child { padding: 12px !important; }
+  [data-label="Ennoic landing page"] #benefits,
+  [data-label="Ennoic landing page"] #modes,
+  [data-label="Ennoic landing page"] #setup { padding: 58px 17px 28px !important; }
+  [data-label="Ennoic landing page"] #benefits > div[style*="grid-template-columns"],
+  [data-label="Ennoic landing page"] #modes > div[style*="grid-template-columns"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  [data-label="Ennoic landing page"] #setup > div[style*="display:flex"] { gap: 20px !important; }
+  [data-label="Ennoic landing page"] #setup pre { max-width: calc(100vw - 34px); overflow-x: auto !important; font-size: 12px !important; }
+  [data-label="Ennoic landing page"] #start { padding: 52px 18px 32px !important; }
+  [data-label="Ennoic landing page"] footer { padding: 24px 18px max(30px, env(safe-area-inset-bottom)) !important; }
+
+  /* Authentication fragment: keep the form column visible and allow the keyboard to scroll it. */
+  body.ennoic-auth-page {
+    display: block;
+    height: auto !important;
+    min-height: 100dvh;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    background: #0b0301;
+  }
+  body.ennoic-auth-page [data-label="Sign up or Sign in"] {
+    width: 100% !important;
+    min-height: 100dvh !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow-x: clip !important;
+    overflow-y: visible !important;
+    padding-bottom: max(24px, env(safe-area-inset-bottom)) !important;
+  }
+  body.ennoic-auth-page [data-label="Sign up or Sign in"] > main {
+    min-height: 100dvh !important;
+    height: auto !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    justify-content: center !important;
+    gap: 22px !important;
+    padding: max(24px, env(safe-area-inset-top)) 16px 30px !important;
+  }
+  body.ennoic-auth-page [data-label="Sign up or Sign in"] > main > section:first-child {
+    display: flex !important;
+    flex: none !important;
+    gap: 9px !important;
+  }
+  body.ennoic-auth-page [data-label="Sign up or Sign in"] > main > section:first-child h1 {
+    font-size: clamp(34px, 9vw, 43px) !important;
+    line-height: 1.05 !important;
+  }
+  body.ennoic-auth-page [data-label="Sign up or Sign in"] > main > section:first-child p { font-size: 15px !important; line-height: 1.55 !important; }
+  body.ennoic-auth-page [data-label="Sign up or Sign in"] > main > section[aria-label="Account access"] {
+    width: 100% !important;
+    max-width: 460px !important;
+    flex: none !important;
+    align-self: center !important;
+    padding: 22px 18px !important;
+    border-radius: 22px !important;
+  }
+  body.ennoic-auth-page [data-label="Sign up or Sign in"] > main > section[aria-label="Account access"] form { gap: 13px !important; }
+  body.ennoic-auth-page [data-label="Sign up or Sign in"] > main > section[aria-label="Account access"] form > h2 {
+    font-size: clamp(27px, 7vw, 31px) !important;
+  }
+  body.ennoic-auth-page [data-label="Sign up or Sign in"] > main > section[aria-label="Account access"] input:not([type="checkbox"]) {
+    width: 100% !important;
+    height: 50px !important;
+    font-size: 16px !important;
+  }
+  body.ennoic-auth-page [data-label="Sign up or Sign in"] > main > section[aria-label="Account access"] form > button[type="submit"] {
+    width: 100% !important;
+    min-height: 50px !important;
+    height: auto !important;
+  }
+  body.ennoic-auth-page [data-label="Sign up or Sign in"] [data-password-toggle] { min-height: 40px !important; }
+  body.ennoic-auth-page [data-label="Sign up or Sign in"] a[href="/auth/google"] {
+    min-height: 48px !important;
+    flex-basis: 100% !important;
+    font-size: 14px !important;
+  }
+  body.ennoic-auth-page [data-label="Sign up or Sign in"] > main > section[aria-label="Account access"] + p {
+    max-width: 460px;
+    align-self: center;
+    padding: 0 8px;
+    font-size: 12px !important;
+  }
+}
+
+@media (max-width: 940px) and (max-height: 600px) {
+  body.ennoic-auth-page [data-label="Sign up or Sign in"] > main { justify-content: flex-start !important; }
+  body.ennoic-auth-page [data-label="Sign up or Sign in"] > main > section[aria-label="Account access"] input:not([type="checkbox"]) { height: 50px !important; }
+  body.ennoic-auth-page [data-label="Sign up or Sign in"] > main > section[aria-label="Account access"] form > button[type="submit"] { min-height: 50px !important; }
+}
+
+@media (max-width: 760px) {
+  .settings-sidebar {
+    padding-top: max(12px, env(safe-area-inset-top));
+  }
+  .settings-nav-item { min-height: 44px; }
+  .settings-main { padding-bottom: max(42px, env(safe-area-inset-bottom)); }
+  .settings-form input,
+  .settings-search-wrap input,
+  .setting-row select { min-height: 46px; font-size: 16px; }
+  .settings-button { min-height: 44px; }
+  .danger-card .settings-button { min-height: 44px; }
+}
+
+@media (min-width: 761px) and (max-width: 940px) {
+  .settings-shell { flex-direction: column; }
+  .settings-sidebar {
+    position: relative;
+    top: auto;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    flex: none;
+    border-right: 0;
+    border-bottom: 1px solid var(--settings-border);
+  }
+  .settings-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .settings-nav-caption,
+  .settings-search-wrap,
+  .sidebar-account { display: none; }
+  .settings-main { padding: 30px 24px 48px; }
+}

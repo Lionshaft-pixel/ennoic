@@ -15,6 +15,11 @@ const TASK_PANEL_KEY = "ennoic-mind:task-panel";
 const $ = (id) => document.getElementById(id);
 const els = {
   app: $("app"), sidebar: $("sidebar"), toggle: $("toggle-sidebar"),
+  mobileToggle: $("mobile-menu-toggle"), sidebarBackdrop: $("sidebar-backdrop"),
+  sidebarClose: $("sidebar-close"), main: document.querySelector(".main"),
+  mobileSettings: $("mobile-open-settings"), mobileViewSwitch: document.querySelector(".mobile-view-switch"),
+  mobileChat: $("show-chat-view"), mobileTasks: $("show-tasks-view"),
+  chatPanel: $("chat-panel"),
   taskDashboard: $("task-dashboard"), collapseTasks: $("collapse-tasks"), restoreTasks: $("restore-tasks"),
   panelDivider: $("panel-divider"), workspaceGrid: $("workspace-grid"),
   newChat: $("new-chat"), search: $("search"), list: $("history-list"), listEmpty: $("history-empty"),
@@ -40,7 +45,7 @@ let loading = false;
 let taskView = "today";
 let editingTaskId = null;
 let taskSearchTimer = null;
-const mobile = window.matchMedia("(max-width: 900px)");
+const mobile = window.matchMedia("(max-width: 940px)");
 const stackedPanels = window.matchMedia("(max-width: 940px)");
 const t = (key, values) => EnnoicI18n.translate(language, key, values);
 let hasMoreConversationHistory = false;
@@ -120,14 +125,85 @@ function setSidebar(open) {
   els.toggle.setAttribute("aria-expanded", String(open));
   els.toggle.setAttribute("aria-label", t(open ? "collapseSidebar" : "expandSidebar"));
   els.toggle.title = t(open ? "collapseSidebar" : "expandSidebar");
+  els.mobileToggle.setAttribute("aria-expanded", String(open));
+  els.mobileToggle.setAttribute("aria-label", t(open ? "collapseSidebar" : "expandSidebar"));
+  els.sidebarBackdrop.hidden = !open || !mobile.matches;
+  els.sidebar.inert = mobile.matches && !open;
+  els.main.inert = mobile.matches && open;
+  if (mobile.matches && open) {
+    els.sidebar.setAttribute("role", "dialog");
+    els.sidebar.setAttribute("aria-modal", "true");
+  } else {
+    els.sidebar.setAttribute("role", "complementary");
+    els.sidebar.removeAttribute("aria-modal");
+  }
+}
+function updateResponsiveControls() {
+  [els.mobileToggle, els.mobileViewSwitch, els.sidebarClose, els.mobileSettings]
+    .forEach((control) => { control.hidden = !mobile.matches; });
 }
 const sidebarIsOpen = () => els.app.dataset.sidebar === "open";
 
 els.toggle.addEventListener("click", () => setSidebar(!sidebarIsOpen()));
-mobile.addEventListener("change", () => setSidebar(false));
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && sidebarIsOpen()) { setSidebar(false); els.toggle.focus(); }
+els.mobileToggle.addEventListener("click", () => {
+  const opening = !sidebarIsOpen();
+  setSidebar(opening);
+  if (opening) els.sidebarClose.focus();
 });
+els.sidebarClose.addEventListener("click", () => {
+  setSidebar(false);
+  els.mobileToggle.focus();
+});
+els.sidebarBackdrop.addEventListener("click", () => {
+  setSidebar(false);
+  els.mobileToggle.focus();
+});
+mobile.addEventListener("change", () => {
+  updateResponsiveControls();
+  setSidebar(false);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && sidebarIsOpen()) {
+    setSidebar(false);
+    (mobile.matches ? els.mobileToggle : els.toggle).focus();
+    return;
+  }
+  if (mobile.matches && sidebarIsOpen() && e.key === "Tab") {
+    const focusable = [...els.sidebar.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    )].filter((element) => !element.hidden && element.getAttribute("aria-hidden") !== "true");
+    if (!focusable.length) {
+      e.preventDefault();
+      els.sidebarClose.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+});
+
+function setMobileView(view) {
+  const selected = view === "tasks" ? "tasks" : "chat";
+  els.app.dataset.mobileView = selected;
+  els.mobileChat.setAttribute("aria-pressed", String(selected === "chat"));
+  els.mobileTasks.setAttribute("aria-pressed", String(selected === "tasks"));
+  els.chatPanel.inert = mobile.matches && selected !== "chat";
+  els.taskDashboard.inert = mobile.matches
+    ? selected !== "tasks"
+    : els.app.dataset.taskPanel === "closed";
+  if (mobile.matches && selected === "tasks") loadTasks();
+}
+els.mobileChat.addEventListener("click", () => setMobileView("chat"));
+els.mobileTasks.addEventListener("click", () => setMobileView("tasks"));
+mobile.addEventListener("change", () => setMobileView(els.app.dataset.mobileView || "chat"));
+els.mobileSettings.addEventListener("click", () => window.location.assign("/settings"));
 
 function setTaskPanelOpen(open, persist = true) {
   els.app.dataset.taskPanel = open ? "open" : "closed";
@@ -136,7 +212,9 @@ function setTaskPanelOpen(open, persist = true) {
   els.collapseTasks.title = t(open ? "hideTasks" : "showTasks");
   els.restoreTasks.hidden = open;
   els.restoreTasks.setAttribute("aria-expanded", String(open));
-  els.taskDashboard.inert = !open;
+  els.taskDashboard.inert = mobile.matches
+    ? els.app.dataset.mobileView !== "tasks"
+    : !open;
   els.panelDivider.hidden = !open;
   if (persist) {
     try { localStorage.setItem(TASK_PANEL_KEY, open ? "open" : "closed"); } catch { /* preference is optional */ }
@@ -1167,6 +1245,8 @@ const greetingKey = greetingHour < 12 ? "greetingMorning"
 els.greeting.dataset.i18n = greetingKey;
 EnnoicI18n.applyTranslations(language);
 setSidebar(!mobile.matches);
+updateResponsiveControls();
+setMobileView("chat");
 setTaskPanelOpen(loadTaskPanelPreference(), false);
 updateDividerOrientation();
 render();
