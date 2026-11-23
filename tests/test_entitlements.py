@@ -141,6 +141,40 @@ class EntitlementTests(unittest.TestCase):
         self.assertEqual(retried.status_code, 200)
         self.assertEqual(entitlements.account_entitlements(user["id"])["usage"]["ai_requests"]["used"], 1)
 
+    def test_post_classifier_task_validation_error_logs_safe_code_location_and_releases_quota(self):
+        user = self.create_user("task-error@example.com")
+        client = self.logged_in_client(user)
+        conversation = account_store.create_conversation(user["id"], "task-error-chat", "Task error")
+        request = {
+            "conversation_id": conversation["id"],
+            "message": "Create a task to review this private-task-marker",
+            "request_id": "task-validation-error-request-01",
+        }
+        classifier_response = (
+            '{"action":"create","tasks":[{"title":"Review the release",'
+            '"due_date":"not-a-date"}]}'
+        )
+        trace_output = StringIO()
+        with patch("task_management.ask_cloud_model", return_value=classifier_response), self.assertLogs(
+            app.app.logger, level="ERROR"
+        ) as captured, redirect_stdout(trace_output):
+            response = client.post("/api/chat", json=request)
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            entitlements.account_entitlements(user["id"])["usage"]["ai_requests"]["used"],
+            0,
+        )
+        logs = "\n".join(captured.output)
+        traces = trace_output.getvalue()
+        self.assertIn("error_type=ValueError", logs)
+        self.assertRegex(logs, r"error_location=task_store\.py:_validate_date:\d+")
+        self.assertNotIn("private-task-marker", logs)
+        self.assertNotIn(classifier_response, logs)
+        self.assertIn("error_location=task_store.py:_validate_date:", traces)
+        self.assertNotIn("private-task-marker", traces)
+        self.assertNotIn(classifier_response, traces)
+
     def test_ai_answer_is_not_written_to_stdout(self):
         secret_answer = "private-ai-answer-marker"
         stdout = StringIO()

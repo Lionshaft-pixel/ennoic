@@ -5,6 +5,7 @@ import secrets
 import smtplib
 import ssl
 import time
+import traceback
 from threading import Event, Lock, Thread
 from email.message import EmailMessage
 from pathlib import Path
@@ -35,6 +36,20 @@ from latency_trace import begin_trace, end_trace, mark_trace
 
 app = Flask(__name__, instance_relative_config=True)
 load_dotenv(Path(__file__).resolve().with_name(".env"), override=False)
+
+
+def _chat_error_location(error):
+    """Return the deepest in-repository frame without exposing exception data."""
+    repository_root = Path(__file__).resolve().parent
+    location = None
+    for frame in traceback.extract_tb(error.__traceback__):
+        try:
+            frame_path = Path(frame.filename).resolve()
+        except (OSError, RuntimeError):
+            continue
+        if frame_path.parent == repository_root:
+            location = f"{frame_path.name}:{frame.name}:{frame.lineno}"
+    return location or "unknown"
 
 if os.environ.get("ENNOIC_TRUST_PROXY", "").casefold() in {"1", "true", "yes"}:
     # Render terminates TLS and forwards one trusted proxy hop to the app.
@@ -1648,11 +1663,17 @@ def chat():
     except Exception as error:
         account_store.release_ai_request(current_user.id, request_id)
         request_ref = hashlib.sha256(request_id.encode("utf-8")).hexdigest()[:12]
-        mark_trace("chat.failed", error_type=type(error).__name__)
+        error_location = _chat_error_location(error)
+        mark_trace(
+            "chat.failed",
+            error_type=type(error).__name__,
+            error_location=error_location,
+        )
         app.logger.error(
-            "chat_request_failed request_ref=%s error_type=%s",
+            "chat_request_failed request_ref=%s error_type=%s error_location=%s",
             request_ref,
             type(error).__name__,
+            error_location,
         )
         return jsonify({"error": "Ennoic couldn't process that message."}), 500
 
