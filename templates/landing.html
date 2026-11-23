@@ -414,7 +414,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         let template = await templateResponse.text();
         template = template.replace(
           /<\/head>/i,
-          '<style>#benefits > h2, #modes > h2, #modes h3, #setup > h2, #start > h2 { color: #fff !important; } #start > h2 { font-style: normal !important; }</style></head>'
+          '<style>#benefits > h2, #modes > h2, #modes h3, #start > h2 { color: #fff !important; } #start > h2 { font-style: normal !important; }</style></head>'
         );
 
         // Nested page bundles (iframe targets). Each ships ONCE, in the ROOT
