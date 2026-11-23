@@ -388,6 +388,10 @@ class AccountAuthenticationTests(AccountTestCase):
         self.assertEqual(landing_source.status_code, 200)
         landing_page = landing_source.get_data(as_text=True)
         self.assertGreater(len(landing_page.splitlines()), 100)
+        self.assertIn('<x-dc>', landing_page)
+        self.assertIn('id="start"', landing_page)
+        self.assertIn('<footer', landing_page)
+        self.assertNotIn('data-dc-script', landing_page)
         self.assertIn(
             'href="https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap"',
             landing_page,
