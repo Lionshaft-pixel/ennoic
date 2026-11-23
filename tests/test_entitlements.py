@@ -175,6 +175,86 @@ class EntitlementTests(unittest.TestCase):
         self.assertNotIn("private-task-marker", traces)
         self.assertNotIn(classifier_response, traces)
 
+    def test_chat_task_update_accepts_classifier_deadline_alias(self):
+        user = self.create_user("deadline-alias@example.com")
+        task = task_store.create_task(
+            {"title": "Review the launch plan", "due_date": "2026-11-28"},
+            user_id=user["id"],
+        )
+        client = self.logged_in_client(user)
+        conversation = account_store.create_conversation(user["id"], "deadline-alias-chat", "Update task")
+        request = {
+            "conversation_id": conversation["id"],
+            "message": "Move the launch plan deadline to December 1.",
+            "request_id": "deadline-alias-request-identifier",
+        }
+        classifier_response = (
+            '{"action":"update","target":"Review the launch plan",'
+            '"updates":{"deadline":"2026-12-01"}}'
+        )
+        with patch("task_management.ask_cloud_model", return_value=classifier_response):
+            response = client.post("/api/chat", json=request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Updated", response.get_json()["reply"])
+        self.assertEqual(task_store.get_task(task["id"], user_id=user["id"])["due_date"], "2026-12-01")
+        self.assertEqual(
+            entitlements.account_entitlements(user["id"])["usage"]["ai_requests"]["used"],
+            1,
+        )
+
+    def test_invalid_classifier_update_field_returns_clarification_without_mutation(self):
+        user = self.create_user("invalid-task-update@example.com")
+        task = task_store.create_task(
+            {"title": "Review the launch plan", "due_date": "2026-11-28"},
+            user_id=user["id"],
+        )
+        client = self.logged_in_client(user)
+        conversation = account_store.create_conversation(user["id"], "invalid-update-chat", "Update task")
+        request = {
+            "conversation_id": conversation["id"],
+            "message": "Change the status of the launch plan task.",
+            "request_id": "invalid-task-update-request-001",
+        }
+        classifier_response = (
+            '{"action":"update","target":"Review the launch plan",'
+            '"updates":{"status":"completed"}}'
+        )
+        with patch("task_management.ask_cloud_model", return_value=classifier_response):
+            response = client.post("/api/chat", json=request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("couldn't determine a valid task change", response.get_json()["reply"])
+        self.assertEqual(task_store.get_task(task["id"], user_id=user["id"])["status"], "open")
+        self.assertEqual(
+            entitlements.account_entitlements(user["id"])["usage"]["ai_requests"]["used"],
+            1,
+        )
+
+    def test_ordinary_chat_request_bypasses_task_classifier(self):
+        user = self.create_user("ordinary-chat@example.com")
+        client = self.logged_in_client(user)
+        conversation = account_store.create_conversation(user["id"], "ordinary-chat", "Ordinary chat")
+        request = {
+            "conversation_id": conversation["id"],
+            "message": "Can you help me plan my day?",
+            "request_id": "ordinary-chat-request-identifier",
+        }
+        with patch("task_management.ask_cloud_model") as task_classifier, patch(
+            "main.ask_cloud_model",
+            return_value={"content": "Let's plan the day together.", "finish_reason": "stop"},
+        ) as chat_model:
+            response = client.post("/api/chat", json=request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["reply"], "Let's plan the day together.")
+        task_classifier.assert_not_called()
+        chat_model.assert_called_once()
+        self.assertEqual(
+            entitlements.account_entitlements(user["id"])["usage"]["ai_requests"]["used"],
+            1,
+        )
+
     def test_ai_answer_is_not_written_to_stdout(self):
         secret_answer = "private-ai-answer-marker"
         stdout = StringIO()

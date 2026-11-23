@@ -28,7 +28,7 @@ Use YYYY-MM-DD for an explicit, unambiguous deadline, resolving relative dates u
 Use null when no deadline was stated. Do not invent task details, deadlines, projects, or priorities.
 When no priority is stated, use null; the application will assign its default priority.
 Use a short identifying task title phrase from the request in target. Use "" if none is given.
-For update, include only fields the user explicitly wants changed in updates. Use null to clear an optional value.
+For update, include only fields the user explicitly wants changed in updates. The only allowed update keys are title, description, project, due_date, and priority. Use due_date for a deadline; do not use deadline as a key. Use null to clear an optional value.
 For list, use project as a filter when named and status as open, completed, or all when requested.
 Use view today, upcoming, overdue, completed, open, or all for list requests; default to open.
 When asked to create tasks, extract them even if an existing task looks similar; the application checks for possible duplicates and asks before changing or adding one.
@@ -296,7 +296,17 @@ def maybe_handle_task_message(message, history, conversation_id=None, user_id=No
             changes = action.get("updates")
             if not isinstance(changes, dict) or not changes:
                 return {"reply": "What would you like to change about that task?", "truncated": False}
-            updated = task_store.update_task(task["id"], changes, user_id=user_id)
+            try:
+                normalized_changes = task_store.normalize_task_updates(changes)
+            except ValueError:
+                return {
+                    "reply": (
+                        "I couldn't determine a valid task change. Please specify a new title, "
+                        "description, project, deadline, or priority."
+                    ),
+                    "truncated": False,
+                }
+            updated = task_store.update_task(task["id"], normalized_changes, user_id=user_id)
             if updated is None:
                 return {"reply": f"I couldn't find **{task['title']}** to update.", "truncated": False}
             reply = f"Updated **{updated['title']}**."

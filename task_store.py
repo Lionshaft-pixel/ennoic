@@ -132,6 +132,22 @@ def _validate_fields(data, *, creating):
     return values
 
 
+def normalize_task_updates(changes):
+    """Validate model-produced update fields and map the user-facing deadline alias."""
+    if not isinstance(changes, dict) or not changes:
+        raise ValueError("At least one task field must be updated.")
+
+    normalized = dict(changes)
+    if "deadline" in normalized:
+        deadline = normalized.pop("deadline")
+        if "due_date" in normalized and normalized["due_date"] != deadline:
+            raise ValueError("Provide only one deadline value.")
+        normalized.setdefault("due_date", deadline)
+    if set(normalized) - EDITABLE_TASK_FIELDS:
+        raise ValueError("Only title, description, project, deadline, and priority can be edited.")
+    return _validate_fields(normalized, creating=False)
+
+
 def _normalized_task_title(value):
     return " ".join(re.findall(r"[a-z0-9]+", value.casefold())) if isinstance(value, str) else ""
 
@@ -529,11 +545,7 @@ def list_tasks(*, view="all", status=None, project=None, search=None, user_id=No
 
 
 def update_task(task_id, changes, *, user_id=None):
-    if not isinstance(changes, dict) or not changes:
-        raise ValueError("At least one task field must be updated.")
-    if set(changes) - EDITABLE_TASK_FIELDS:
-        raise ValueError("Only title, description, project, deadline, and priority can be edited.")
-    values = _validate_fields(changes, creating=False)
+    values = normalize_task_updates(changes)
     if not values:
         raise ValueError("At least one task field must be updated.")
 
