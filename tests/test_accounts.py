@@ -521,6 +521,7 @@ class AccountAuthenticationTests(AccountTestCase):
         self.assertIn("font-size: 16px", css)
         self.assertIn("@media (max-width: 480px)", css)
         self.assertIn(".stage[data-chat-state=\"empty\"] .composer", css)
+        self.assertIn(".hero { margin: auto 0; }", css)
         self.assertIn(".collapse-tasks { display: none !important; }", css)
         self.assertIn("min-height: 44px", css)
 

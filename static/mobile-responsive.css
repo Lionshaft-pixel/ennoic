@@ -209,7 +209,7 @@
 
   .chat-panel { min-width: 0; min-height: 0; border: 1px solid var(--border); border-radius: 15px; background: var(--panel); }
   .stage { min-height: 0; overflow: hidden; padding: 0 12px 8px; }
-  .hero { margin: auto 0 18px; }
+  .hero { margin: auto 0; }
   .stage[data-chat-state="empty"] .composer { margin-bottom: 4px !important; }
   .hero h1 { font-size: clamp(21px, 5.4vw, 25px); }
   .orb { width: 44px; height: 44px; margin-bottom: 17px; }
