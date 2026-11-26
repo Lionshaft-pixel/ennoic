@@ -1,0 +1,6 @@
+/* Scoped to the optional install control; existing layout styles stay in charge. */
+.ennoic-pwa-tools { padding: 10px 0; font: 13px/1.5 system-ui, sans-serif; }
+.ennoic-pwa-tools[hidden], .ennoic-pwa-tools [hidden] { display: none !important; }
+.ennoic-pwa-tools button { padding: 6px 10px; border: 1px solid currentColor; border-radius: 8px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.ennoic-pwa-tools button:focus-visible { outline: 2px solid #e8650f; outline-offset: 3px; }
+.ennoic-pwa-tools p { margin: 8px 0 0; max-width: 36em; font: inherit; color: inherit; }

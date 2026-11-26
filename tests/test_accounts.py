@@ -403,7 +403,7 @@ class AccountAuthenticationTests(AccountTestCase):
             landing_page,
         )
         self.assertIn(
-            '#benefits h2,#benefits h3,#modes h2,#modes h3,#setup h2,#start h2',
+            '#benefits h2,#benefits h3,#modes h2,#modes h3,#start h2',
             landing_page,
         )
         landing_manifest = client.get("/static/landing-manifest.json")

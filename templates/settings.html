@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  {% include "_pwa_head.html" %}
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token }}">
   <meta name="color-scheme" content="dark">
@@ -60,6 +61,7 @@
           <div class="setting-row"><div class="setting-copy"><label for="settings-language" data-i18n="displayLanguage">Display language</label><p data-i18n="languageExplanation">This changes the interface language. AI-generated replies are not automatically translated.</p></div>
             <select id="settings-language"><option value="en">English</option><option value="es">Español</option><option value="fr">Français</option></select>
           </div>
+          <div class="ennoic-pwa-tools" data-pwa-install-slot hidden></div>
           <p class="settings-feedback" id="general-feedback" role="status" aria-live="polite"></p>
         </section>
 

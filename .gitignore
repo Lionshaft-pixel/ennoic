@@ -42,3 +42,13 @@ npm-debug.log*
 *.swp
 .DS_Store
 Thumbs.db
+
+# Android signing material must never enter source control (any directory).
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.apk
+*.aab
+*.apks
+*.idsig

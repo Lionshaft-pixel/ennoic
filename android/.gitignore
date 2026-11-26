@@ -1,0 +1,17 @@
+# The generated Gradle project and signing material are local only.
+/generated/
+/work/
+/build/
+.gradle/
+local.properties
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.apk
+*.aab
+*.apks
+*.idsig
+*.log
+.env
+.env.*

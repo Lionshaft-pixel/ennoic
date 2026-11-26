@@ -1,0 +1,18 @@
+{
+  "packageId": "com.ennoic.app",
+  "host": "ennoic.onrender.com",
+  "name": "Ennoic",
+  "launcherName": "Ennoic",
+  "startUrl": "/",
+  "display": "standalone",
+  "themeColor": "#0b0504",
+  "backgroundColor": "#0b0504",
+  "navigationColor": "#0b0504",
+  "webManifestUrl": "https://ennoic.onrender.com/manifest.webmanifest",
+  "fullScopeUrl": "https://ennoic.onrender.com/",
+  "iconUrl": "https://ennoic.onrender.com/static/pwa/icons/icon-512.png",
+  "maskableIconUrl": "https://ennoic.onrender.com/static/pwa/icons/maskable-512.png",
+  "enableNotifications": false,
+  "additionalTrustedOrigins": [],
+  "fallbackType": "customtabs"
+}

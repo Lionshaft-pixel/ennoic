@@ -3,6 +3,7 @@
 
 <head>
   <meta charset="utf-8">
+  {% include "_pwa_head.html" %}
   <!--
 Some of the files in static/landing-manifest.json are font files downloaded unchanged from Google Fonts (fonts.gstatic.com) when the page was saved. Google Fonts serves each family in pieces, one file per range of characters, so these may not be complete families. Each family’s license follows and still applies to its files. If you pass these files on, keep this comment in static/landing-page.html.
 
@@ -663,6 +664,10 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         // createElement so they execute, awaiting onload for src scripts to
         // preserve ordering (React before ReactDOM before Babel before text/babel).
         const doc = new DOMParser().parseFromString(template, 'text/html');
+        // Keep PWA metadata/styles when the saved page replaces this shell.
+        for (const node of document.head.querySelectorAll('[data-ennoic-pwa]')) {
+          doc.head.append(node.cloneNode(true));
+        }
         document.documentElement.replaceWith(doc.documentElement);
 
         // Resolve page-frame markers: mint this document's own blob for each
@@ -713,6 +718,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         if (window.Babel && typeof window.Babel.transformScriptTags === 'function') {
           window.Babel.transformScriptTags();
         }
+        window.dispatchEvent(new Event('ennoic:page-ready'));
       } catch (err) {
         setStatus('Error unpacking: ' + err.message);
         console.error('Bundle unpack error:', err);

@@ -33,9 +33,11 @@ from discord_notifications import notify_discord
 from main import process_message_with_metadata
 from task_management import message_requires_ai, resolve_task_confirmation
 from latency_trace import begin_trace, end_trace, mark_trace
+from pwa import pwa
 
 
 app = Flask(__name__, instance_relative_config=True)
+app.register_blueprint(pwa)
 load_dotenv(Path(__file__).resolve().with_name(".env"), override=False)
 
 
@@ -173,7 +175,8 @@ def unauthorized():
 
 @app.before_request
 def initialize_database():
-    if request.path in {"/healthz", "/readyz"}:
+    if (request.path in {"/healthz", "/readyz"}
+            or request.blueprint == "pwa" or request.endpoint == "static"):
         return
     database_started_at = time.perf_counter()
     path = account_store.database_key()
@@ -246,6 +249,7 @@ def add_security_headers(response):
             "font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; "
             "connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com https://api.razorpay.com https://checkout.razorpay.com https://*.paddle.com https://*.paddle.net; "
             "frame-src https://api.razorpay.com https://checkout.razorpay.com https://*.paddle.com https://*.paddle.net; "
+            "worker-src 'self'; manifest-src 'self'; "
             "object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
         )
     else:
@@ -254,7 +258,8 @@ def add_security_headers(response):
             "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; "
-            "connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+            "connect-src 'self'; worker-src 'self'; manifest-src 'self'; "
+            "object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
         )
     if request.is_secure:
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")

@@ -1,0 +1,19 @@
+{
+  "name": "ennoic-android-packaging",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Independent Bubblewrap/TWA tooling for the existing Ennoic web origin",
+  "scripts": {
+    "doctor": "bubblewrap doctor",
+    "init": "bubblewrap init --manifest=https://ennoic.onrender.com/manifest.webmanifest --directory=generated",
+    "build": "cd generated && bubblewrap build",
+    "update": "cd generated && bubblewrap update",
+    "install-apk": "cd generated && bubblewrap install"
+  },
+  "devDependencies": {
+    "@bubblewrap/cli": "1.28.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -110,6 +110,8 @@ Production data should remain in Neon, not Render's local filesystem. The local 
 
 ## Run tests
 
+PWA implementation, offline/cache policy, device checks, and the complete change report are documented in [docs/PWA.md](docs/PWA.md). Optional, separate Android APK packaging instructions are in [android/README.md](android/README.md).
+
 Run the Python suite:
 
 ```powershell
