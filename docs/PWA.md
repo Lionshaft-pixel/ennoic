@@ -1,6 +1,6 @@
 # Ennoic PWA implementation and test report
 
-Audited 27 November 2026 against original production commit `9c0736fd9d28a90065de9679b06101bbce42433f` on `vibecoded`. The user authorized the verified production push and a local Android test build. The initial 36-file implementation was reviewed in full, including the uncommitted diff, routes, templates, branding, public cache boundary, deployment configuration, tests, scripts, and Android preparation. Production/build outcomes are recorded in the release verification section below.
+Audited 27 November 2026 and revalidated 28 November 2026 against original production commit `9c0736fd9d28a90065de9679b06101bbce42433f` on `vibecoded`. The PWA implementation is preserved in commit `b0a419b762ca63638a3fefaa3bf05b6b926b2c3c`. The user authorized the readiness fix, verified production push, and local Android test build. Routes, templates, branding, public cache boundaries, deployment configuration, tests, scripts, and Android preparation were reviewed. Production/build outcomes are recorded below.
 
 ## Behavior
 
@@ -43,7 +43,7 @@ All Python/browser runs used temporary SQLite data, suppressed loading `.env`, a
 
 | Check | Result |
 | --- | --- |
-| Final full Python suite | **117/117 passed**, including the 4 new PWA tests and both corrected baseline tests (124.790 seconds) |
+| Final full Python suite | **121/121 passed** on 28 November (184.266 seconds), including 4 readiness tests, 4 PWA tests, and both corrected baseline tests |
 | Original failure reproduction | Both previously failing tests fail on an isolated clean archive of original commit `9c0736f`, and before test corrections in the PWA working tree; neither was a PWA regression |
 | New Flask PWA tests | 4 passed: manifest/icon dimensions, MIME/cache/scope/CSP headers, metadata/session preservation, public resources without DB/cookies, DAL validation |
 | Existing Node tests | 6 passed |
@@ -72,33 +72,21 @@ Existing tests still cover CSRF rejection, rate limiting, Google OAuth's canonic
 
 ## Release verification
 
-Local release audit completed: **117 Python tests and 11 Node tests pass**, browser regression checks pass with no page errors, icon regeneration is deterministic, and syntax/whitespace checks pass. A filename/content-pattern audit found no sensitive files or credentials in the intended changes. Render continues to use the existing `vibecoded` branch and Gunicorn/Python build. Runtime dependencies, database schemas, pricing, entitlements, AI prompts, and existing account/payment logic are unchanged. No signing material, real environment files, local data, or generated builds are included in Git.
+The 28 November release audit passed **121 Python tests and 11 Node tests**, including four focused database-readiness tests. Browser regression checks also passed with no page errors, including worker updates, offline/network recovery, login/logout, tasks, mocked chat/history, and session reopening. An independent source review found no release-blocking readiness or PWA privacy/auth/cache issue. Render continues to use the existing `vibecoded` branch and Gunicorn/Python build. Runtime dependencies, database schemas, pricing, entitlements, AI prompts, and existing account/payment logic are unchanged. No signing material, real environment files, local data, or generated builds are included in Git.
 
-### Deployment held: existing production readiness failure
+### Readiness diagnosis and fix
 
-At approximately **01:52 IST on 27 November 2026**, before any commit was pushed or any deployment triggered, repeated read-only checks of the existing production service returned:
+The initial deployment was held on 27 November because the existing production `/healthz` returned 200 while `/readyz` repeatedly returned 503. Landing/login/pricing returned 200, unauthenticated task requests correctly returned 401, and the new PWA resources were still 404. This predated the PWA changes. The user then supplied Render logs showing `database_readiness_failed error_type=OperationalError` and confirmed a newly created task persisted after refreshing.
 
-| Production path | Result |
-| --- | --- |
-| `/healthz` | 200, `{"status":"ok"}` |
-| `/readyz` | Repeated 503, `{"status":"not_ready"}`; also an earlier timeout |
-| `/`, `/login`, `/pricing` | 200 |
-| `/api/tasks` without authentication | 401, expected |
-| `/api/auth/me` without authentication | 200, expected anonymous response |
-| `/manifest.webmanifest`, `/service-worker.js`, `/.well-known/assetlinks.json` | 404, because the PWA has not been deployed |
+The readiness probe used a **different connection path** from serving requests: every check opened a new PostgreSQL connection, applied a two-second connection timeout, and supplied `options=-c statement_timeout=2000` during startup. Normal operations use the existing psycopg pool without that startup option. Neon documents that its pooled PgBouncer endpoint rejects unsupported startup parameters; this probe-only setting is the most likely cause of the reported `OperationalError`. The exception type alone does not establish the exact server error, and cold connection handshakes can also exceed the probe's old timeout. See [Neon's unsupported-startup-parameter documentation](https://neon.com/docs/connect/connection-errors#unsupported-startup-parameter).
 
-The remote production branch remains `9c0736fd9d28a90065de9679b06101bbce42433f`. The readiness failure therefore predates these changes. The existing readiness implementation performs a bounded database connection and `SELECT 1`, then deliberately returns a generic failure without private error details. The public response establishes a failed readiness probe, **not its root cause** or proof that every database operation is unavailable. Landing/login HTML availability does not establish that authenticated database operations are healthy.
+`database.py` now shares the existing application pool with readiness. It borrows a connection for at most two seconds, opens an explicit transaction, applies `set_config('statement_timeout', '2000', true)`, and executes `SELECT 1`. The timeout is transaction-local and resets on commit/rollback. The pool context returns or discards the connection on success/failure. No new direct connection bypass is used and no normal application timeout was increased. Pool acquisition and SQL execution have separate bounds; this is not a strict total network deadline. A genuinely exhausted/unavailable pool still fails readiness.
 
-Because this could indicate production database danger, the user's explicit release-blocking condition applies: **no push and no deployment** until the failure can be explained or resolved safely. The implementation is preserved in a local commit on `vibecoded`; use `git log -1` for that checkpoint's exact hash. No history was rewritten and no remote work was overwritten.
+`app.py` requires no readiness-route change: failures still return generic 503 and log only the exception type. SQLite behavior is unchanged. New `tests/test_database.py` covers shared-pool reuse, absence of startup options/direct connects, cleanup and retry after query failure, pool exhaustion, and SQLite compatibility.
 
-The Render plugin was found but is not installed/connected; no connected browser/dashboard session or Render API credential was available. GitHub's combined commit status exposed no deployment statuses. The [Render](https://status.render.com/) and [Neon](https://neonstatus.com/) public status pages reported operational services during investigation, which does not diagnose this specific app. No production environment variables, credentials, account data, or database settings were changed. No actual customer login, AI request, charge, email, or data mutation was used for production testing.
+### Deployment results
 
-To resume under the existing authorization:
-
-1. Install/connect Render access, inspect the service logs around `database_readiness_failed`, and determine the actual exception/configuration/connectivity issue. Do not expose database URLs or credentials in logs or documentation.
-2. Resolve or explain the readiness failure without hiding it, weakening checks, altering customer data, or making unrelated account/schema changes. Verify `/readyz` returns 200 reliably, or establish an explicitly justified safe resolution.
-3. Fetch `origin/vibecoded` again, reconcile any new remote work safely, run checks appropriate to any fixes, then push the verified local commit normally. Do not force-push.
-4. Verify Render's resulting deployment, health/readiness, exact PWA resources and browser behavior. Then proceed to the Android test build.
+The readiness correction passed the final suites and is ready for the authorized push. Production verification and Android outcomes will be recorded here after the resulting deployment. No production environment variables, credentials, account data, or database settings were changed during diagnosis.
 
 Local QA evidence is retained under ignored `instance/pwa-qa/`, including `python-before-audit.json`, `original-head-failures.log`, `python-final.json`, `browser-audit.log`, `results.json`, screenshots, and `production-release-gate.json`. Logs and generated evidence are not committed.
 
@@ -158,6 +146,7 @@ Modified:
 - `.gitignore` — signing/build artifact exclusions.
 - `README.md` — links to the PWA report and Android guide.
 - `app.py` — register public blueprint, exempt static/PWA requests from DB initialization, allow same-origin workers/manifests in CSP.
+- `database.py` — reuse the application pool for readiness with a transaction-local query timeout.
 - `static/landing-page.html` — optional install slot in footer.
 - `tests/test_accounts.py`, `tests/test_entitlements.py` — correct the two proven pre-existing stale assertions described above.
 - `templates/admin_users.html`, `templates/authentication.html`, `templates/checkout_success.html`, `templates/index.html`, `templates/landing.html`, `templates/legal_page.html`, `templates/pricing.html`, `templates/settings.html` — shared PWA head; landing/auth preserve it across document replacement; app/settings provide optional install slots.
@@ -176,6 +165,7 @@ Added:
 - `scripts/generate_pwa_icons.py` — reproducible derivation from the existing wordmark.
 - `scripts/pwa_browser_smoke.py` — isolated optional browser regression checks.
 - `tests/test_pwa.py`, `tests/pwa_worker.test.cjs` — focused automated coverage.
+- `tests/test_database.py` — pooled readiness success/failure and SQLite regression coverage.
 - `android/.gitignore`, `android/package.json`, `android/ennoic.config.json`, `android/README.md` — separate Android packaging preparation.
 - `docs/PWA.md` — this report.
 

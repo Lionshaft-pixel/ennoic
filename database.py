@@ -101,23 +101,52 @@ def database_key():
     return str(path.resolve())
 
 
+def _get_postgres_pool():
+    """Share the application pool with probes; keep connection setup identical."""
+    if psycopg is None:
+        raise RuntimeError("Install psycopg[binary] to connect to PostgreSQL.")
+    if ConnectionPool is None:
+        raise RuntimeError('Install "psycopg[pool]" to connect to PostgreSQL efficiently.')
+    global _postgres_pool
+    with _postgres_pool_lock:
+        if _postgres_pool is None:
+            _postgres_pool = ConnectionPool(
+                os.environ["DATABASE_URL"],
+                open=True,
+                min_size=0,
+                max_size=5,
+                timeout=15,
+                max_idle=60,
+                kwargs={
+                    "row_factory": dict_row,
+                    "prepare_threshold": None,
+                    "connect_timeout": 10,
+                },
+            )
+    return _postgres_pool
+
+
 def check_readiness(timeout_seconds=2):
-    """Run a bounded connectivity probe without exposing connection details."""
+    """Probe the serving path with bounded pool acquisition and SQL execution.
+
+    These are separate timeouts, not a strict total network deadline. The pool
+    context commits/rolls back and returns or discards the borrowed connection.
+    """
     timeout_seconds = max(1, int(timeout_seconds))
     if uses_postgres():
-        if psycopg is None:
-            raise RuntimeError("PostgreSQL driver is unavailable.")
-        timeout_ms = timeout_seconds * 1000
-        raw = psycopg.connect(
-            os.environ["DATABASE_URL"],
-            connect_timeout=timeout_seconds,
-            options=f"-c statement_timeout={timeout_ms}",
-            autocommit=True,
-        )
-    else:
-        path = Path(os.environ.get("ENNOIC_TASK_DB", DEFAULT_DATABASE_PATH))
-        path.parent.mkdir(parents=True, exist_ok=True)
-        raw = sqlite3.connect(path, timeout=timeout_seconds)
+        with _get_postgres_pool().connection(timeout=timeout_seconds) as raw:
+            with raw.transaction():
+                # Neon/PgBouncer may reject statement_timeout in startup options.
+                # Transaction-local configuration works with transaction pooling
+                # and cannot leak this short timeout into subsequent app queries.
+                raw.execute("SELECT set_config('statement_timeout', %s, true)",
+                            (str(timeout_seconds * 1000),))
+                raw.execute("SELECT 1").fetchone()
+        return
+
+    path = Path(os.environ.get("ENNOIC_TASK_DB", DEFAULT_DATABASE_PATH))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    raw = sqlite3.connect(path, timeout=timeout_seconds)
     try:
         raw.execute("SELECT 1").fetchone()
     finally:
@@ -127,33 +156,14 @@ def check_readiness(timeout_seconds=2):
 def connect():
     started_at = time.perf_counter()
     if uses_postgres():
-        if psycopg is None:
-            raise RuntimeError("Install psycopg[binary] to connect to PostgreSQL.")
-        if ConnectionPool is None:
-            raise RuntimeError('Install "psycopg[pool]" to connect to PostgreSQL efficiently.')
-        global _postgres_pool
-        with _postgres_pool_lock:
-            if _postgres_pool is None:
-                _postgres_pool = ConnectionPool(
-                    os.environ["DATABASE_URL"],
-                    open=True,
-                    min_size=0,
-                    max_size=5,
-                    timeout=15,
-                    max_idle=60,
-                    kwargs={
-                        "row_factory": dict_row,
-                        "prepare_threshold": None,
-                        "connect_timeout": 10,
-                    },
-                )
-        raw = _postgres_pool.getconn(timeout=15)
+        pool = _get_postgres_pool()
+        raw = pool.getconn(timeout=15)
         mark_trace(
             "database.connection.checkout",
             duration_ms=round((time.perf_counter() - started_at) * 1000),
             backend="postgres",
         )
-        return PostgresConnection(raw, _postgres_pool)
+        return PostgresConnection(raw, pool)
 
     path = Path(os.environ.get("ENNOIC_TASK_DB", DEFAULT_DATABASE_PATH))
     path.parent.mkdir(parents=True, exist_ok=True)
