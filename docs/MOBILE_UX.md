@@ -2,6 +2,8 @@
 
 This release preserves the desktop marketing page, Flask backend, account verification, task/AI logic, prices, entitlements, and database schema. No production account, charge, mandate, provider setting, or secret was changed during testing.
 
+Code commit `23d436880f519d46ff3d40f0a756bb63684eb735` is deployed from `vibecoded`. Health/readiness, new welcome/manifest/assets, anonymous-access boundaries, canonical Google initiation and the unchanged Digital Asset Links association passed live HTTP checks; Google returned `linked: true`. Full local validation passed 133 Python tests, 19 Node tests and the complete browser regression without page errors. The verified update APK is `android/build/ennoic-test-debug.apk`, version `0.2.0-test`/code `2`, with the original package/certificate.
+
 ## Delivered behavior
 
 - Installed PWA and updated Android launches use `/app`. Guests see the existing black-hole/event-horizon artwork, original wordmark, Google sign-in, direct email entry and signup/help links. Authenticated users see the existing dashboard. Browser `/` remains the marketing page. A signed, privilege-free session preference keeps authentication/logout returns in the app flow; Chrome/TWA cookie sharing can also apply this presentation to a browser login tab.
@@ -9,6 +11,7 @@ This release preserves the desktop marketing page, Flask backend, account verifi
 - Same-origin navigation immediately shows a thin progress indicator and polite status, without delaying/intercepting the link. Back/forward restoration clears it. Reduced-motion preferences are respected. Android tap highlighting is suppressed while keyboard focus remains visible.
 - Dashboard/settings initial HTML now requests only the subscription status it actually renders. The previous full entitlement call added three usage-count database round trips. `/api/entitlements` and all quota/plan enforcement still use the full authoritative data; no billing data is cached.
 - Pricing's Paddle SDK downloads with `defer` and initializes after deferred scripts. This allows parsing/painting during its network wait. Checkout authentication, CSRF, configured price/quantity and intent payload are preserved.
+- Live regression also found an existing CSP block on Paddle's injected stylesheet. Its exact CDN origin is now allowed for styles on pricing/payment pages only, with a regression test; other pages and script/worker protections retain their policies.
 - Pricing explains monthly charge, mandate maximum, validity dates, cancellation and UPI revocation separately. No price or mandate is altered. A pre-existing Paddle account-deletion cancellation transport URL was corrected to `/subscriptions/{id}/cancel`, preserving ownership, effective-date and confirmation safeguards.
 
 ## Native splash and Android update

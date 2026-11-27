@@ -242,10 +242,15 @@ def add_security_headers(response):
         or getattr(g, "checkout_csp_nonce", None)
     )
     if bundle_nonce:
+        # Paddle.js injects its overlay stylesheet into the pricing document.
+        # Keep that permission scoped to payment pages and the exact CDN origin.
+        payment_styles = " https://cdn.paddle.com" if (
+            getattr(g, "pricing_csp_nonce", None) or getattr(g, "checkout_csp_nonce", None)
+        ) else ""
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             f"script-src 'self' 'nonce-{bundle_nonce}' 'strict-dynamic' blob: https://cdn.jsdelivr.net https://checkout.razorpay.com https://cdn.paddle.com; "
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            f"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com{payment_styles}; "
             "font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; "
             "connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com https://api.razorpay.com https://checkout.razorpay.com https://*.paddle.com https://*.paddle.net; "
             "frame-src https://api.razorpay.com https://checkout.razorpay.com https://*.paddle.com https://*.paddle.net; "

@@ -2,7 +2,7 @@
 
 This directory is independent of Flask, Python dependencies, Render's build, and the PWA. It wraps `https://ennoic.onrender.com/` in a Trusted Web Activity (TWA), using the device's browser engine. Google Play is optional: a signed APK can be installed directly.
 
-## Current mobile release ? 28 November 2026
+## Current mobile release - 28 November 2026
 
 An updated signed test APK has been generated for the mobile/tablet polish release. The same package and certificate allow it to update the code-1 build already tested on the Realme Pad X. The native splash changes require this APK update; the welcome/layout/navigation changes are served by the website. See [the mobile report](../docs/MOBILE_UX.md), [PWA results](../docs/PWA.md), and [checkout/Google review](../docs/MOBILE_CHECKOUT_REVIEW.md).
 
@@ -29,7 +29,9 @@ Public **certificate** SHA-256 (different from the APK file hash):
 60:F5:54:7E:71:0B:4A:3C:D0:6C:0F:8D:CB:8F:EB:80:17:6C:65:D7:7E:D8:21:C1:9A:4B:0E:75:72:2A:78:98
 ```
 
-The package-bound website DAL default continues to trust this exact certificate. No association change or provider-console setting is required for this update. Post-push live health/DAL verification is recorded in the final PWA release results.
+The package-bound website DAL default continues to trust this exact certificate. Code commit `23d436880f519d46ff3d40f0a756bb63684eb735` was pushed to `vibecoded` and deployed by Render. Post-push `/healthz` and `/readyz` returned 200 repeatedly; manifest start `/app`/white background and the new welcome/mobile/PWA assets matched the release. The production DAL endpoint returned the exact package/fingerprint above and Google's check returned **`linked: true`**. No association change or provider-console setting was required for this update.
+
+The full isolated suites passed **133 Python tests and 19 Node tests**, including the follow-up payment-stylesheet CSP isolation test. The complete local Edge regression passed with no page errors, including browser/app login/logout, mocked Google callback return, task CRUD/completion, chat/history, reopening, pricing layouts, navigation feedback, service-worker updates, cache privacy, offline/recovery, iOS instructions and the legacy standalone bridge. Native splash and real provider handoffs still require the updated APK on the tablet.
 
 The build used Node 24.6.0/npm 11.5.2, Bubblewrap CLI/core 1.28.0, Gradle 8.11.1, AGP 8.9.1, Browser Helper 2.8.0, SDK platform 36/build tools 35.0.0, and portable Temurin JDK 17.0.21.1+2 under `%LOCALAPPDATA%/EnnoicAndroidToolchain`. No machine Java/environment setting changed. The final incremental build passed in 2m11s with a process-only 512 MB Gradle heap after Windows rejected the default 1.5 GB heap. Generated resources, actual APK metadata, compiled vector paths and signatures were inspected before replacing the delivered file.
 

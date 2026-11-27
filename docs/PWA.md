@@ -2,18 +2,24 @@
 
 Audited 27 November 2026 and revalidated 28 November 2026 against original production commit `9c0736fd9d28a90065de9679b06101bbce42433f` on `vibecoded`. The PWA implementation is preserved in commit `b0a419b762ca63638a3fefaa3bf05b6b926b2c3c`. The user authorized the readiness fix, verified production push, and local Android test build. Routes, templates, branding, public cache boundaries, deployment configuration, tests, scripts, and Android preparation were reviewed. Production/build outcomes are recorded below.
 
-## Current mobile-polish release ? 28 November 2026
+## Current mobile-polish release - 28 November 2026
 
 The follow-up adds `/app` installed launch, the original black-hole welcome artwork/direct email authentication, responsive chat spacing, immediate navigation feedback, accessible touch polish, clearer UPI disclosures and a white native splash. Browser `/` retains the existing marketing page. Prices, entitlements, database schemas and AI prompts are unchanged. A pre-existing Paddle cancellation transport URL was corrected with mocked regression coverage. See [the mobile report and exact file inventory](MOBILE_UX.md) and [provider findings/manual console steps](MOBILE_CHECKOUT_REVIEW.md).
 
-- Full isolated Python suite: **132/132 passed**, zero failures/errors (215.652 s).
+- Full isolated Python suite: **133/133 passed**, zero failures/errors (122.517 s), including the follow-up scoped Paddle stylesheet CSP regression.
 - Full Node suite: **19/19 passed**, including navigation behavior, worker privacy/offline, pricing region and deferred-SDK initialization.
 - Full isolated Edge browser regression: **passed, no page errors**. Browser and installed email login/logout, verification/help navigation, mocked Google token/identity callback with the browser cookie jar, fixed `/app` return, task CRUD/completion, chat/history, settings, session reopening, five pricing viewports, generic offline/recovery, exact public cache, worker v1→v2 update without reload, installability, iOS instructions and simulated legacy standalone launch all passed. Held-response navigation feedback appeared in about 4.9 ms. Real Google/Paytm interaction and native standalone windows are device checks.
 - Updated APK: **0.2.0-test / code 2**, `com.ennoic.app`, existing certificate preserved; 5,551,545 bytes. File SHA-256 `e70278e284be52ff94e8ae698ef47fc861f93e58bfe5dc9aa160e59fb5149497`.
 - Native build: Gradle passed; actual package/version/SDK/launch `/app`, compiled white API-31 splash/vector, embedded white `/app` manifest, no notification permission and v2 signing verified. Previous code-1 APK retained locally.
 - The test device is not connected here. This update's native splash, complete real provider handoffs and actual Realme network responsiveness require owner testing. The previous APK was tested by the owner on that tablet.
 
-Post-push production results will be recorded in the release-verification update after the normal `vibecoded` push. Earlier tables in this report describe the original PWA/readiness/DAL releases, not this follow-up's test totals or APK binary.
+Code commit `23d436880f519d46ff3d40f0a756bb63684eb735` was pushed normally to `vibecoded` and Render deployed it successfully. The release was observed after two old-version polls. `/healthz` and `/readyz` each returned 200 three times. `/app` returned the welcome with `no-store`; ordinary `/` still served marketing in the same session. The live manifest exactly matched stable identity `/`, start `/app`, standalone mode and white background. The worker, PWA client, welcome assets, navigation script and responsive CSS matched the committed sources; root worker scope/revalidation headers remained correct. Pricing served the new disclosures/deferred SDK. Anonymous tasks remained 401, settings redirected to login, and Google authorization initiation retained the canonical callback and S256 PKCE.
+
+Digital Asset Links returned 200 JSON without redirect/cookie and exactly matched the new APK's unchanged package/certificate. Google's `assetlinks:check` returned **`linked: true`**. Authenticated production data was not mutated; local regression covers authenticated behavior and mocks billable/provider transports. Production HTTP evidence is in ignored `instance/pwa-qa/production-mobile-verification.json`.
+
+Live browser regression found an existing payment stylesheet CSP block. The follow-up permits only `https://cdn.paddle.com` in payment-page `style-src`, keeping other pages and the script/worker policy unchanged. Its new isolation test passed in the 133-test full suite; deployment/browser confirmation is recorded after the follow-up push.
+
+Earlier tables in this report describe the original PWA/readiness/DAL releases, not this follow-up's test totals or APK binary.
 
 ## Behavior
 

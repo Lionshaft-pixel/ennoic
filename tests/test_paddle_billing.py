@@ -16,6 +16,21 @@ import paddle_billing
 
 
 class PaddleBillingTests(unittest.TestCase):
+    def test_paddle_styles_are_allowed_only_on_payment_pages_without_weakening_script_policy(self):
+        client = app_module.app.test_client()
+        pricing = client.get("/pricing")
+        csp = pricing.headers["Content-Security-Policy"]
+        styles = next(part.strip() for part in csp.split(";") if part.strip().startswith("style-src "))
+        self.assertIn("https://cdn.paddle.com", styles)
+        self.assertNotIn("https://*", styles)
+        self.assertIn("'strict-dynamic'", csp)
+        self.assertIn("object-src 'none'", csp)
+        self.assertIn("worker-src 'self'", csp)
+        for path in ["/", "/login", "/app", "/offline"]:
+            response = client.get(path)
+            styles = next(part.strip() for part in response.headers["Content-Security-Policy"].split(";") if part.strip().startswith("style-src "))
+            self.assertNotIn("https://cdn.paddle.com", styles, path)
+
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.env_patch = patch.dict(os.environ, {
