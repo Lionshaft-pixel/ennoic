@@ -162,6 +162,8 @@ The provisional Android ID is `com.ennoic.app`. The Android testing follow-up ex
 
 Digital Asset Links is unnecessary for ordinary PWA installation; it is needed for verified TWA behavior. The existing APK has been reverified with `apksigner`/`aapt`; its signature and file hash are unchanged. After deployment, a supported Android browser should launch this APK without browser controls on the Ennoic origin. Physical-device verification remains manual; external Google/payment pages may show browser controls. The [Android guide](../android/README.md#install-and-launch-on-your-phone) contains exact installation instructions, troubleshooting, and a mobile test checklist. Finalize the app ID and replace/remove the debug trust when setting up release signing. Google Play is optional.
 
+The DAL update was committed as `725fff75a13284dcf40b07ec46639aa493f2e8c6` and pushed normally to `vibecoded`. Render deployed it successfully: the live endpoint returned 200 JSON with the exact package/fingerprint independently extracted from the existing APK, no redirect/cookie, and revalidation headers. Google's Digital Asset Links check returned **`linked: true`**. Health, readiness, manifest, and worker checks remained 200. QA evidence is in ignored `instance/pwa-qa/production-dal-verification.json`; full follow-up results are in `python-dal-final.json`. No release keys, private signing data, or APK binaries were committed.
+
 ## Exact file changes
 
 Modified:

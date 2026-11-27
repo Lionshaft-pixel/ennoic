@@ -38,6 +38,8 @@ The website's checked-in DAL default now associates this exact certificate with 
 
 The DAL follow-up passed **123 Python tests and 11 Node tests**, including exact certificate/default response, public headers/no database access, package isolation, valid replacement, multiple-certificate normalization/deduplication, empty revocation, and invalid configuration. UI, account/task/AI behavior, and the APK binary are unchanged.
 
+Production verification after pushing `725fff75a13284dcf40b07ec46639aa493f2e8c6` to `vibecoded`: `https://ennoic.onrender.com/.well-known/assetlinks.json` returned HTTP 200, `application/json`, no redirect/cookie, and the exact package/certificate extracted from the APK. Google's Digital Asset Links `assetlinks:check` API returned **`linked: true`**. `/healthz`, `/readyz`, the manifest, and the service worker also returned 200. No Render environment update or APK rebuild was necessary. This confirms the server association; physical phone launch remains untested.
+
 ## Install and launch on your phone
 
 1. Use Android 7.0/API 24 or later with an up-to-date TWA-capable browser, preferably Chrome. Connect to the internet for website loading and association verification.
