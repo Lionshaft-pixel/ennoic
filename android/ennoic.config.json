@@ -5,6 +5,7 @@
   "launcherName": "Ennoic",
   "startUrl": "/",
   "display": "standalone",
+  "minSdkVersion": 24,
   "themeColor": "#0b0504",
   "backgroundColor": "#0b0504",
   "navigationColor": "#0b0504",

@@ -57,6 +57,7 @@ All Python/browser runs used temporary SQLite data, suppressed loading `.env`, a
 | Cache privacy | Inspected Cache Storage after authenticated tasks/chat; exactly the four public resources above |
 | Worker update | Served changed worker bytes/cache version in isolated test server; verified controller change, old-cache removal, and retained chat without page reload |
 | Icon assets | Dimensions, opaque backgrounds, maskable safe-circle geometry, and rendered appearance checked |
+| Android packaging | Bubblewrap 1.28.0 project generation and Gradle debug build passed; actual APK signature, package/version, SDK levels, launch URL, and notification permission checked |
 | Syntax/whitespace | Python compilation, JS syntax checks, and `git diff --check` passed |
 
 ### Resolution of the two original failures
@@ -86,9 +87,26 @@ The readiness probe used a **different connection path** from serving requests: 
 
 ### Deployment results
 
-The readiness correction passed the final suites and is ready for the authorized push. Production verification and Android outcomes will be recorded here after the resulting deployment. No production environment variables, credentials, account data, or database settings were changed during diagnosis.
+On **28 November 2026**, a normal fast-forward push delivered PWA commit `b0a419b762ca63638a3fefaa3bf05b6b926b2c3c` and readiness fix `228da55c4d229ffa21bb0dd602bdd364cb1c7e32` to `origin/vibecoded`. No remote work was overwritten. Render automatically deployed the new application. The old 503/404 responses changed to the following verified results:
 
-Local QA evidence is retained under ignored `instance/pwa-qa/`, including `python-before-audit.json`, `original-head-failures.log`, `python-final.json`, `browser-audit.log`, `results.json`, screenshots, and `production-release-gate.json`. Logs and generated evidence are not committed.
+| Production check | Result |
+| --- | --- |
+| `/healthz` | 200, `{"status":"ok"}` |
+| `/readyz` | 200, `{"status":"ready"}`; repeated successfully after browser checks and in three additional requests |
+| `/manifest.webmanifest` | 200, `application/manifest+json`; JSON matches the committed manifest |
+| `/service-worker.js` | 200, JavaScript MIME, root scope and revalidation headers; source matches the committed worker |
+| Five ordinary/maskable/Apple icons | 200, correct PNG dimensions; bytes match the local assets |
+| `/offline`, `/.well-known/assetlinks.json` | 200; DAL intentionally returns `[]` until a signing identity is configured |
+| `/`, `/login`, `/pricing` | 200; landing and existing sign-in form render without browser errors |
+| `/api/tasks`, `/api/auth/me`, `/settings` without login | Expected 401, anonymous 200, and login redirect respectively |
+| Google OAuth initiation | 302 to `accounts.google.com`, with the existing `https://ennoic.onrender.com/auth/google/callback`; provider flow not completed |
+| Live Chromium installability | `Page.getInstallabilityErrors` returned no errors in a normal persistent browser profile |
+| Live worker/offline/privacy | Root controller active; exactly four public cache entries; generic fallback rendered offline; landing restored after reconnect |
+| Live iOS emulation | Apple metadata and expandable Safari Add to Home Screen instructions passed |
+
+The successful readiness check after this change supports the diagnosis of a probe-specific connection failure. No production environment variables, credentials, customer account data, or database settings were changed. Authenticated task/chat/login/logout flows were tested in the isolated local application; no actual customer credentials, paid AI request, charge, email, or production data mutation was used for live verification. The user independently confirmed task persistence before deployment. Real mobile installation, complete provider handoffs, and live authenticated flows remain device/account checks below.
+
+Local QA evidence is retained under ignored `instance/pwa-qa/`, including `python-readiness-final.json`, `python-readiness-final.log`, `browser-readiness-final.log`, `results.json`, `production-deployment-poll.json`, `production-final.json`, screenshots, and earlier baseline failure reproductions. Logs and generated evidence are not committed.
 
 Run the usual suites with environment loading disabled and local test configuration, as described below. The browser script sanitizes its own environment automatically:
 
@@ -123,20 +141,24 @@ with tempfile.TemporaryDirectory() as directory:
 
 ## Physical-device checks after deployment
 
-1. Confirm the HTTPS manifest, worker, all icon files, and offline resources return 200 directly with correct MIME types. Confirm the worker controls `/`. Current production checks found the new root resources absent (404), as expected before deployment.
+1. The deployed HTTPS manifest, worker, icons, and offline resources already passed direct HTTP/MIME checks, and Chromium confirmed root worker control. Recheck them after future releases.
 2. On Android Chrome, install from the optional control or browser menu. Launch from the home-screen icon and check that the address bar is absent, the actual wordmark is legible, and the OS splash/background looks correct. Test portrait/landscape and keyboard use.
 3. On iPhone/iPad Safari, use Share > Add to Home Screen, retain Open as Web App if offered, then Add. Launch from the icon and inspect icon/splash/status-bar appearance and safe areas. Follow [Apple's instructions](https://support.apple.com/en-ie/guide/iphone/iphea86e5236/27/ios/27).
 4. In both installed apps, sign in/out, perform a real Google sign-in and return, create/edit/complete tasks, send an authorized live AI request, open settings and billing/customer portal, then close/reopen. Verify expected session expiry. Test payments in an appropriate sandbox; do not create a live charge merely for installation testing.
 5. With an established worker, go offline and relaunch from the icon. Verify only the generic fallback is available, API requests fail normally, and no private data appears in Cache Storage. Reconnect and retry. Offline support requires a prior successful online worker installation.
 6. Deploy a subsequent approved public-offline version, increment the cache version, and return to the app. Confirm the new worker/cache, removal of its obsolete cache, fresh app files on navigation, and no forced reload of a draft. Check another desktop browser and actual Safari as well as Chromium.
 
-Physical Android/iOS installation, native standalone windows/splashes, real provider redirects, and signed APK validation remain manual. No real mobile device was connected for this task.
+Physical Android/iOS installation, native standalone windows/splashes, complete real provider handoffs, and on-device APK behavior remain manual. No real mobile device was connected for this task.
 
 ## Android APK handoff
 
-See [android/README.md](../android/README.md) for exact prerequisite findings, commands, signing/keystore management, and release steps. No APK, signing key, or password was generated. The user authorized safe prerequisite installation, but the requested Android stage follows a successful PWA deployment. Because the production readiness gate failed before pushing, Android tool downloads/configuration and APK generation were not started. First resolve the deployment blocker; then use a supported JDK/SDK setup and a local testing signing identity. A test certificate does not establish verified production TWA fullscreen behavior.
+**A signed test APK was generated after successful deployment:** `android/build/ennoic-test-debug.apk`, 5,531,296 bytes. File SHA-256: `49daeef2d60af06928cb7496786f6482838865e8ae07a416fddb687482a7048a`. It remains an ignored local deliverable and is not committed to Git. See [android/README.md](../android/README.md) for exact tooling, validation, debug certificate fingerprint, reproduction commands, signing/keystore management, and release steps.
 
-The provisional Android ID is `com.ennoic.app`. `/.well-known/assetlinks.json` is implemented and returns an empty array until valid public certificate fingerprints are configured. `.env.example` documents `ENNOIC_ANDROID_PACKAGE_ID` and `ENNOIC_ANDROID_SHA256_FINGERPRINTS`. Digital Asset Links is unnecessary for ordinary PWA installation; it is needed for verified TWA behavior.
+Bubblewrap CLI/core 1.28.0 generated the project from the live manifest through the reproducible `npm run generate-debug` helper. A checksum-verified portable Temurin JDK 17 was installed user-locally; Gradle 8.11.1 used the existing SDK and automatically added Build-Tools 35.0.0 under its already accepted license. The first build exposed an upstream mismatch: Bubblewrap's default API 21 was lower than Browser Helper 2.8.0's required API 24. Setting `minSdkVersion: 24` in the Android reference configuration fixed it. The subsequent `assembleDebug` passed in 3m44s.
+
+`apksigner` verified the actual APK (Signature Scheme v2), and `aapt` confirmed `com.ennoic.app`, Ennoic, version `0.1.0-test`/code `1`, minimum API 24, target/compile SDK 36, the production launch URL, and no `POST_NOTIFICATIONS` permission. Generated launcher/splash artwork retains the full existing wordmark. Gradle uses the standard external `~/.android/debug.keystore`; no release key was created, and signing credentials were not collected or committed. No device was connected, so installation, native splash/window appearance, and full on-device functionality remain manual.
+
+The provisional Android ID is `com.ennoic.app`. `/.well-known/assetlinks.json` is live and returns an empty array until valid public certificate fingerprints are configured. `.env.example` documents `ENNOIC_ANDROID_PACKAGE_ID` and `ENNOIC_ANDROID_SHA256_FINGERPRINTS`. Digital Asset Links is unnecessary for ordinary PWA installation; it is needed for verified TWA behavior. The test certificate was not automatically trusted in production: expect a Custom Tab/browser toolbar until intentional verification is configured. Finalize the app ID and release signing identity before distribution, then configure the matching public certificate fingerprint. Google Play is optional.
 
 ## Exact file changes
 
@@ -166,7 +188,8 @@ Added:
 - `scripts/pwa_browser_smoke.py` — isolated optional browser regression checks.
 - `tests/test_pwa.py`, `tests/pwa_worker.test.cjs` — focused automated coverage.
 - `tests/test_database.py` — pooled readiness success/failure and SQLite regression coverage.
-- `android/.gitignore`, `android/package.json`, `android/ennoic.config.json`, `android/README.md` — separate Android packaging preparation.
+- `android/.gitignore`, `android/package.json`, `android/ennoic.config.json`, `android/README.md` — independent Android packaging configuration, tooling, and build/signing guide.
+- `android/generate-debug.cjs` — reproduce the Bubblewrap debug project from the deployed manifest without collecting signing passwords.
 - `docs/PWA.md` — this report.
 
 References: [Chromium install criteria](https://web.dev/articles/install-criteria), [Chrome installation guidance](https://developer.chrome.com/docs/modern-web-guidance/guides/pwa/install-web-app), [service-worker lifecycle](https://web.dev/articles/service-worker-lifecycle), [browser installation prompts](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/How_to/Trigger_install_prompt). Android-specific primary references are linked in its guide.

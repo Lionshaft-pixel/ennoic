@@ -6,12 +6,14 @@
   "scripts": {
     "doctor": "bubblewrap doctor",
     "init": "bubblewrap init --manifest=https://ennoic.onrender.com/manifest.webmanifest --directory=generated",
+    "generate-debug": "node generate-debug.cjs",
     "build": "cd generated && bubblewrap build",
     "update": "cd generated && bubblewrap update",
     "install-apk": "cd generated && bubblewrap install"
   },
   "devDependencies": {
-    "@bubblewrap/cli": "1.28.0"
+    "@bubblewrap/cli": "1.28.0",
+    "@bubblewrap/core": "1.28.0"
   },
   "engines": {
     "node": ">=18"

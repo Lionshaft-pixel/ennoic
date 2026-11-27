@@ -2,51 +2,110 @@
 
 This directory is independent of Flask, Python dependencies, Render's build, and the PWA. It wraps `https://ennoic.onrender.com/` in a Trusted Web Activity (TWA), using the device's browser engine. Google Play is optional: a signed APK can be installed directly.
 
-## Current status — 27 November 2026
+## Current status — 28 November 2026
 
-**No APK was generated. The Android build stage is held behind the unsuccessful production deployment gate.** The user authorized safe prerequisite installation and a local test build, but required Android work to follow a successfully deployed PWA. Before any push, the existing production `/readyz` repeatedly returned HTTP 503 with `{"status":"not_ready"}`. The verified PWA changes were therefore preserved locally and not pushed. See [the release blocker](../docs/PWA.md#deployment-held-existing-production-readiness-failure).
+**The PWA is deployed and healthy.** PWA commit `b0a419b762ca63638a3fefaa3bf05b6b926b2c3c` and pooled-readiness fix `228da55c4d229ffa21bb0dd602bdd364cb1c7e32` were pushed normally to `vibecoded`, triggering Render. Production `/healthz` and `/readyz` now return 200 repeatedly. Manifest, worker, all five icons, offline fallback, root worker control, Chromium installability, cache privacy, network recovery, and iOS installation instructions passed live checks. See [the PWA report](../docs/PWA.md#deployment-results).
 
-This machine has Node 24.6.0, npm 11.5.2, ADB, Android SDK platform 36, and build tools 36.0.0/36.1.0. `java -version` reports Java **8 JRE**; `javac`, `keytool`, `sdkmanager`, and Bubblewrap are not on PATH. No `JAVA_HOME`, `ANDROID_HOME`, or `ANDROID_SDK_ROOT` was configured. SDK command-line tools and a suitable JDK were not found in the checked standard locations. `adb devices` previously listed no devices; no physical-device testing was performed. No signing certificate was supplied or generated.
+**A signed test APK was generated and verified:** `android/build/ennoic-test-debug.apk` (relative to the repository root). Bubblewrap **1.28.0** generated the project from the live production manifest; Gradle `assembleDebug` completed successfully in 3m44s after correcting the upstream minimum-SDK mismatch below. No release signing identity or production Digital Asset Links trust has been configured.
 
-The CLI is pinned to **1.28.0** in `package.json`. Its documented requirements include Node 18+ and JDK 17; it can guide installation of its Android dependencies. Existing SDK 36 files alone do not establish a working Bubblewrap environment. No global Java/SDK installation or license acceptance was performed.
+Available tooling: Node 24.6.0, npm 11.5.2, existing Android SDK platform 36 and build tools 36.0.0/36.1.0. A portable **Temurin JDK 17.0.21.1+2** was downloaded from Adoptium's official release, SHA-256 verified, and extracted to `%LOCALAPPDATA%\EnnoicAndroidToolchain\jdk-17.0.21.1+2`. Archive SHA-256: `eafba0944f777abdc74d5aad16049c9b5a1275b6ce99e2939ba9f7f3e6f08c87`. Gradle 8.11.1 automatically installed required SDK Build-Tools **35.0.0** using the existing accepted SDK license. The system Java 8 installation and machine environment were not changed. Android SDK command-line tools were absent; the successful debug workflow used the SDK directly.
 
-The live production landing/login/pricing pages and `/healthz` returned 200, but readiness returned 503. `/manifest.webmanifest`, `/service-worker.js`, and `/.well-known/assetlinks.json` still returned 404. Production authorization has already been given; the unresolved readiness failure is the reason the push/deployment and subsequent Android build are held. No APK exists at the expected build paths below.
+Only the Android directory has local npm dependencies. Flask/Render do not install or use them. Generated projects, build outputs, signing material, and local logs remain ignored.
+
+## Verified artifact
+
+| Property | Actual result |
+| --- | --- |
+| Delivered file | `android/build/ennoic-test-debug.apk` (ignored local artifact) |
+| Original build output | `android/generated/app/build/outputs/apk/debug/app-debug.apk` |
+| Size | 5,531,296 bytes |
+| APK SHA-256 | `49daeef2d60af06928cb7496786f6482838865e8ae07a416fddb687482a7048a` |
+| Signature verification | `apksigner verify` exit 0; APK Signature Scheme v2 verified |
+| Application | `com.ennoic.app`, Ennoic, version `0.1.0-test`, code `1` |
+| Android versions | Minimum API 24; target/compile SDK 36 |
+| Launcher / launch URL | `com.ennoic.app.LauncherActivity`; `https://ennoic.onrender.com/` |
+| Permissions/configuration | Notifications disabled; no `POST_NOTIFICATIONS`; no additional trusted origins; Custom Tabs fallback |
+| Signing identity | Standard user-local `~/.android/debug.keystore`; no release key generated |
+| Device installation | Not performed: `adb devices` listed no connected devices |
+
+Public **debug certificate** SHA-256 fingerprint (different from the APK file hash):
+
+```text
+60:F5:54:7E:71:0B:4A:3C:D0:6C:0F:8D:CB:8F:EB:80:17:6C:65:D7:7E:D8:21:C1:9A:4B:0E:75:72:2A:78:98
+```
+
+This certificate has not been added to production DAL. The test APK is signed and structurally verified, but native installation, splash, complete OAuth/payment handoffs, tasks/chat, close/reopen, and toolbar-free TWA behavior still require a real device/account. A debug APK cannot update an APK signed with a different certificate; uninstall the test wrapper when moving to an incompatible release signing identity.
 
 ## Identity and configuration
 
-`ennoic.config.json` records the intended answers to Bubblewrap's initialization prompts. It is a reference configuration, **not** a complete generated `twa-manifest.json` and is not automatically consumed by the CLI.
+`ennoic.config.json` records the intended answers to Bubblewrap's initialization prompts. It is a reference configuration, **not** a complete generated `twa-manifest.json`. The CLI does not consume it automatically; `generate-debug.cjs` does.
 
-- Application ID: **`com.ennoic.app`**, provisional. Confirm ownership/naming before distribution. Change it in the generated manifest and `ENNOIC_ANDROID_PACKAGE_ID` together. Changing the ID after distribution creates a different Android app.
+- Application ID: **`com.ennoic.app`**, provisional. Confirm ownership/naming before distribution. Keep `ennoic.config.json`, the generated manifest, and `ENNOIC_ANDROID_PACKAGE_ID` aligned when finalizing it. Regenerate/update the project after changing it. Changing the ID after distribution creates a different Android app.
 - Name/launcher name: Ennoic. Host: `ennoic.onrender.com`. Start path: `/`.
 - Manifest, scope, icons, and colors match the PWA. Use the existing wordmark icons, including the maskable icon.
 - Notifications disabled. Keep `additionalTrustedOrigins` empty: Google and payment providers should retain their browser security UI.
+- Minimum Android API **24 (Android 7.0)**. Bubblewrap 1.28.0 defaults to API 21, but its Android Browser Helper 2.8.0 dependency requires API 24. The first build's manifest merger exposed this mismatch; `minSdkVersion: 24` in the reference configuration resolves it without forcing incompatible library use. Target/compile SDK is 36.
 - Fallback: Custom Tabs. A toolbar is expected when origin verification fails or navigation leaves the verified origin.
 
-## Remaining build steps
+## Reproduce the local debug build
 
-After production readiness is safely restored and the verified PWA is pushed/deployed, check that the HTTPS manifest and its icon URLs return 200 directly. Then, from this directory:
+From this directory in a development PowerShell session, use a supported JDK 17 and the existing SDK. These environment assignments apply only to that shell and its children:
 
 ```powershell
+$env:JAVA_HOME = "$env:LOCALAPPDATA\EnnoicAndroidToolchain\jdk-17.0.21.1+2"
+$env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+$env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 npm install
+npm run generate-debug
+Push-Location generated
+try { .\gradlew.bat --no-daemon assembleDebug } finally { Pop-Location }
+```
+
+On another computer, replace the JDK/SDK paths with its actual installations. Obtain a portable JDK from [Adoptium](https://adoptium.net/installation/archives) and verify its published checksum before executing it. Install required Android SDK components from the [official Android tools](https://developer.android.com/studio#command-line-tools-only).
+
+`generate-debug.cjs` uses Bubblewrap's pinned core generator and the deployed manifest, overlays the Ennoic configuration, validates it, and writes `generated/twa-manifest.json` and the Gradle project. It references the standard user-local `~/.android/debug.keystore`; Gradle supplies debug signing without collecting a password. It refuses to replace a manifest with a non-debug signing alias. Regeneration overwrites generated project files; keep release projects separately. Debug version is `0.1.0-test`, code `1`.
+
+The expected Gradle artifact is `generated/app/build/outputs/apk/debug/app-debug.apk`. Confirm the build succeeded before using it. Verify with SDK tools:
+
+```powershell
+$apk = Join-Path $PWD 'generated\app\build\outputs\apk\debug\app-debug.apk'
+& "$env:JAVA_HOME\bin\java.exe" -jar "$env:ANDROID_HOME\build-tools\36.1.0\lib\apksigner.jar" verify --verbose --print-certs $apk
+& "$env:ANDROID_HOME\build-tools\36.1.0\aapt.exe" dump badging $apk
+Get-FileHash -Algorithm SHA256 -LiteralPath $apk
+adb devices
+# Only after connecting an authorized test device:
+adb install -r $apk
+```
+
+Use the actual installed build-tools version if it differs. `npm run install-apk` below belongs to the CLI release workflow and expects a different output filename. Debug signing is for local testing, not production identity or distribution continuity. Without a matching certificate in production DAL, the APK should fall back to a Custom Tab with a browser toolbar. Ordinary PWA installation is already independent of Android verification.
+
+## Release build workflow
+
+Bubblewrap's interactive CLI remains available separately. Run its doctor and allow it to configure supported JDK/SDK dependencies, including command-line tools if required:
+
+```powershell
 npm run doctor
 npm run init
 ```
 
-Allow Bubblewrap to set up its supported JDK/SDK, or configure already installed **JDK 17** and SDK command-line tools with `npx bubblewrap updateConfig --jdkPath="C:\path\to\jdk-17" --androidSdkPath="C:\path\to\sdk"`, then run `npm run doctor`. Review required SDK licenses interactively.
+For manually managed prerequisites, `npx bubblewrap updateConfig --jdkPath="C:\path\to\jdk-17" --androidSdkPath="C:\path\to\supported-sdk"` configures the CLI. Run `npm run doctor` and review required licenses. The CLI's SDK discovery differs from the direct Gradle debug workflow; do not assume an existing SDK platform alone passes its checks. Keep the generated debug project separately before initializing a release project.
 
-The existing authorization permits a standard portable JDK/SDK setup after the deployment gate is met. Prefer official vendor archives, verify download checksums, and use a user-local toolchain directory without replacing system Java or running unknown privileged installers. For a disposable debug build, generate the Android project and use Gradle's debug signing/`assembleDebug` workflow; keep its keystore outside Git. Verify the resulting APK signature and manifest before calling it installable. Record the actual output path and SHA-256 only after a real build succeeds. The commands below instead describe Bubblewrap's signed testing/release-key workflow; never label a debug/test certificate as a production release identity.
+The commands below describe a deliberate signed testing/release-key workflow; never label a debug/test certificate as a production release identity.
 
-During initialization, use `ennoic.config.json` for the app values. Set the signing-key path to a location **outside the repository**, for example `C:\Users\YOUR_USER\AppData\Local\EnnoicSigning\ennoic-test.jks`. Use a separate test key/alias for disposable test builds. Do not accept a default key location inside the source tree. Answer credential prompts locally; do not record passwords in scripts, Git, shell history, or this document.
+During initialization, use `ennoic.config.json` for the app values. Confirm `minSdkVersion` is **24** in the generated `twa-manifest.json` before updating/building the project; the upstream default 21 does not satisfy Browser Helper 2.8.0. Set the signing-key path to a location **outside the repository**, for example `C:\Users\YOUR_USER\AppData\Local\EnnoicSigning\ennoic-test.jks`. Use a separate test key/alias for disposable test builds. Do not accept a default key location inside the source tree. Answer credential prompts locally; do not record passwords in scripts, Git, shell history, or this document.
 
 Bubblewrap generates `generated/twa-manifest.json` and the Gradle project. Confirm the ID, origin, icons, notification setting, signing-key path, and version. Then:
 
 ```powershell
+npm run update
 npm run build
 adb devices
 npm run install-apk
 ```
 
-The expected CLI outputs are `generated/app-release-signed.apk` and `generated/app-release-bundle.aab`. These are expected filenames, not artifacts produced by this task. An unsigned APK is not an installable deliverable. To inspect a real build, use the SDK's `apksigner verify --verbose --print-certs` against the signed APK. Install on an authorized connected Android device with USB debugging and confirm the launcher's icon, splash, standalone window, authentication, task/chat flows, and update behavior.
+Run `update` after changing the generated manifest so those settings reach Gradle; declining a later regeneration prompt can leave stale project settings. The verified debug build used Gradle 8.11.1, Android Gradle Plugin 8.9.1, and Android Browser Helper 2.8.0 from Bubblewrap's pinned template. The ignored wrapper additionally records the official Gradle distribution SHA-256 `f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6`.
+
+The expected CLI release outputs are `generated/app-release-signed.apk` and `generated/app-release-bundle.aab`. No release APK/AAB has been produced by this task. An unsigned APK is not an installable deliverable. Verify signatures before installation. On an authorized connected Android device, confirm the launcher's icon, splash, standalone window, authentication, task/chat flows, and update behavior.
 
 All generated project/build files and signing artifacts are ignored. `npm install` can produce a lockfile; review and retain that nonsecret lockfile if adopting this packaging toolchain. Flask never imports this directory or invokes npm.
 
