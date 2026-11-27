@@ -11,14 +11,16 @@ import os
 from pathlib import Path
 import sys
 import tempfile
-from threading import Thread
+from threading import Event, Thread
+from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import dotenv
 from playwright.sync_api import sync_playwright, expect
-from flask import Response
+from flask import Response, request
 from werkzeug.serving import make_server, WSGIRequestHandler
 
 
@@ -32,6 +34,16 @@ def cache_paths(page):
     return page.evaluate("""async () => {
       const names = (await caches.keys()).filter(name => name.startsWith('ennoic-public-offline-'));
       return Promise.all(names.map(async name => ({name, paths: (await (await caches.open(name)).keys()).map(r => new URL(r.url).pathname)})));
+    }""")
+
+
+def navigation_timing(page):
+    return page.evaluate("""() => {
+      const navigation = performance.getEntriesByType('navigation')[0];
+      const paint = performance.getEntriesByName('first-contentful-paint')[0];
+      return {ttfb_ms: Math.round(navigation.responseStart - navigation.requestStart),
+        dom_content_loaded_ms: Math.round(navigation.domContentLoadedEventEnd),
+        first_contentful_paint_ms: paint ? Math.round(paint.startTime) : null};
     }""")
 
 
@@ -74,6 +86,14 @@ def main():
             return response
 
         application.app.view_functions["pwa.service_worker"] = worker_response
+        pricing_gate = Event()
+        pricing_gate.set()
+
+        @application.app.before_request
+        def hold_pricing_for_feedback_check():
+            if request.path == "/pricing":
+                pricing_gate.wait(timeout=10)
+
         server = make_server("127.0.0.1", 0, application.app, threaded=True, request_handler=QuietHandler)
         thread = Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -218,6 +238,7 @@ def main():
                 expect(page.locator("html.ennoic-landing-document")).to_be_attached()
                 assert page.evaluate("fetch('/api/auth/me').then(r => r.json()).then(j => j.authenticated)") is False
                 results["logout"] = "passed through existing settings form"
+                page.close()
 
                 mobile = browser.new_context(**playwright.devices["Pixel 7"])
                 mobile_page = mobile.new_page()
@@ -226,7 +247,7 @@ def main():
                 expect(mobile_page.locator("html.ennoic-landing-document")).to_be_attached()
                 check_metadata(mobile_page)
                 assert mobile_page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-                mobile_page.screenshot(path=str(output / "android-width.png"), full_page=True)
+                mobile_page.screenshot(path=str(output / "android-width.png"))
                 results["android_viewport"] = "passed Chromium mobile emulation; physical install still required"
                 mobile_page.goto(origin + "/login")
                 mobile_page.locator("#email").fill(user["email"])
@@ -241,6 +262,132 @@ def main():
                 mobile_page.locator("#show-chat-view").click()
                 expect(mobile_page.locator("#composer-input")).to_be_visible()
                 results["mobile_authenticated_layout"] = "passed login, task/chat view switching, and no horizontal overflow"
+                mobile.close()
+
+                # A predictable start URL is shared by Android TWA and installed
+                # PWAs; no user-agent classification is involved in this flow.
+                installed = browser.new_context(viewport={"width": 800, "height": 1280}, has_touch=True)
+                app_page = installed.new_page()
+                app_page.on("pageerror", lambda error: errors.append(str(error)))
+                app_page.goto(origin + "/app")
+                expect(app_page.locator("[data-app-welcome]")).to_be_visible()
+                expect(app_page.get_by_role("link", name="Continue with Google")).to_be_visible()
+                expect(app_page.locator("#password")).to_be_hidden()
+                assert app_page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+                check_metadata(app_page)
+                app_page.screenshot(path=str(output / "installed-welcome-tablet.png"))
+                # Browser marketing remains available in the same session.
+                app_page.goto(origin + "/")
+                expect(app_page.locator("#dc-root")).to_be_attached()
+                app_page.goto(origin + "/app?form=register")
+                expect(app_page.get_by_role("link", name="Sign in", exact=True)).to_be_visible()
+                app_page.goto(origin + "/app/email-help")
+                expect(app_page.locator('form[action="/auth/password-reset"]')).to_be_visible()
+                app_page.get_by_role("link", name="Back to sign in").click()
+                expect(app_page.get_by_role("button", name="Continue with email", exact=True)).to_be_visible()
+                app_page.locator("#email").fill(user["email"])
+                app_page.get_by_role("button", name="Continue with email", exact=True).click()
+                expect(app_page.locator("#password")).to_be_visible()
+                app_page.locator("#password").fill("local-smoke-password-2026")
+                app_page.get_by_role("button", name="Continue", exact=True).click()
+                expect(app_page).to_have_url(origin + "/app")
+                expect(app_page.locator("#app")).to_be_visible()
+                expect(app_page.locator(".history-item")).to_have_count(2)
+                if not app_page.locator(".history-item").first.is_visible():
+                    toggle = app_page.locator("#mobile-menu-toggle")
+                    (toggle if toggle.is_visible() else app_page.locator("#toggle-sidebar")).click()
+                app_page.locator(".history-item").filter(has_text="Hello from the PWA test").click()
+                expect(app_page.locator("#messages")).to_contain_text("Local AI transport test succeeded.")
+                results["installed_email_auth"] = "passed welcome, email reveal, existing login, direct /app dashboard; browser / unchanged"
+                results["local_dashboard_timing"] = navigation_timing(app_page)
+                # Hold a real navigation request to observe immediate feedback
+                # before the server responds, then let the existing link finish.
+                pricing_gate.clear()
+                # Use the existing same-origin anchor; visibility is irrelevant
+                # to this event-level check (the viewport may hide its sidebar).
+                feedback = app_page.evaluate("""() => {
+                  const started = performance.now();
+                  document.querySelector('a[href="/pricing"]').click();
+                  const progress = document.getElementById('ennoic-navigation-progress');
+                  return {visible: !!progress && !progress.hidden && progress.getBoundingClientRect().height === 3,
+                    status: progress?.textContent, elapsed_ms: performance.now() - started};
+                }""")
+                assert feedback["visible"] and "Opening page" in feedback["status"], feedback
+                pricing_gate.set()
+                expect(app_page).to_have_url(origin + "/pricing")
+                expect(app_page.locator("#ennoic-navigation-progress")).to_have_count(0)
+                results["navigation_feedback"] = feedback
+
+                pricing_sizes = [(320, 740), (390, 844), (800, 1280), (1280, 800), (1440, 1000)]
+                results["pricing_viewports"] = []
+                for width, height in pricing_sizes:
+                    app_page.set_viewport_size({"width": width, "height": height})
+                    app_page.goto(origin + "/pricing")
+                    assert app_page.evaluate("document.documentElement.scrollWidth <= innerWidth"), (width, height)
+                    button = app_page.locator("button, a[href]").filter(visible=True).first
+                    assert button.evaluate("element => getComputedStyle(element).webkitTapHighlightColor") == "rgba(0, 0, 0, 0)"
+                    button.focus()
+                    # Keyboard focus style remains authored; touch suppression
+                    # must not erase the focus-visible rule.
+                    assert app_page.evaluate("[...document.styleSheets].filter(s => s.href?.includes('app-navigation.css')).some(s => [...s.cssRules].some(r => r.selectorText?.includes(':focus-visible')))")
+                    app_page.screenshot(path=str(output / f"pricing-{width}.png"), full_page=True)
+                    results["pricing_viewports"].append({"width": width, "height": height, "overflow": False})
+                app_page.set_viewport_size({"width": 800, "height": 1280})
+                app_page.goto(origin + "/app")
+                app_page.close()
+                app_page = installed.new_page()
+                app_page.on("pageerror", lambda error: errors.append(str(error)))
+                app_page.goto(origin + "/app")
+                expect(app_page.locator("#app")).to_be_visible()
+                expect(app_page.locator("#messages")).to_contain_text("Local AI transport test succeeded.")
+                results["installed_reopen"] = "passed existing cookie/session and saved conversation"
+                app_page.evaluate("navigator.serviceWorker.ready.then(() => true)")
+                installed.set_offline(True)
+                app_page.goto(origin + "/app")
+                expect(app_page.get_by_role("heading", name="You're offline")).to_be_visible()
+                installed.set_offline(False)
+                expect(app_page.locator("#network-status")).to_contain_text("Connection restored")
+                app_page.get_by_role("link", name="Try again").click()
+                expect(app_page.locator("#app")).to_be_visible()
+                results["installed_offline_recovery"] = "passed generic offline /app fallback and authenticated recovery"
+                app_page.goto(origin + "/settings")
+                app_page.locator('[data-section="account"]').click()
+                app_page.once("dialog", lambda dialog: dialog.accept())
+                app_page.locator('#settings-sign-out-form button').click()
+                expect(app_page).to_have_url(origin + "/app")
+                expect(app_page.locator("[data-app-welcome]")).to_be_visible()
+                assert app_page.evaluate("fetch('/api/auth/me').then(r => r.json()).then(j => j.authenticated)") is False
+                results["installed_logout"] = "passed return to welcome without an authenticated session"
+
+                # Use the browser cookie jar for real authorization initiation,
+                # then substitute the provider token/identity transport and
+                # navigate the actual callback. Never open a Google login.
+                oauth = {}
+
+                class TokenResponse:
+                    def raise_for_status(self):
+                        pass
+
+                    def json(self):
+                        return {"id_token": "local-identity-token"}
+
+                with patch.dict(os.environ, {"ENNOIC_GOOGLE_CLIENT_ID": "local-client", "ENNOIC_GOOGLE_CLIENT_SECRET": "local-secret", "ENNOIC_PUBLIC_ORIGIN": origin}), patch(
+                    "app.requests.post", return_value=TokenResponse()
+                ), patch("google.oauth2.id_token.verify_oauth2_token", side_effect=lambda *a, **k: {
+                    "nonce": oauth["nonce"], "email": user["email"], "email_verified": True
+                }):
+                    expect(app_page.get_by_role("link", name="Continue with Google")).to_have_attribute("href", "/auth/google")
+                    authorize = installed.request.get(origin + "/auth/google", max_redirects=0)
+                    assert authorize.status == 302
+                    params = parse_qs(urlparse(authorize.headers["location"]).query)
+                    oauth.update({key: value[0] for key, value in params.items()})
+                    app_page.goto(origin + "/auth/google/callback?state=" + oauth["state"] + "&code=mock-code")
+                    expect(app_page.locator("#app")).to_be_visible()
+                    expect(app_page).to_have_url(origin + "/app")
+                assert oauth["redirect_uri"] == origin + "/auth/google/callback"
+                assert oauth["code_challenge_method"] == "S256"
+                results["installed_google_callback"] = "passed authorization with browser cookie jar, mocked token/identity callback, canonical URI, PKCE and /app return"
+                installed.close()
 
                 ios = browser.new_context(**playwright.devices["iPhone 13"])
                 ios_page = ios.new_page()
@@ -259,15 +406,17 @@ def main():
                 ios_page.emulate_media(media="screen")
                 ios_page.add_init_script("Object.defineProperty(navigator, 'standalone', {value: true})")
                 ios_page.reload()
-                expect(ios_page.locator("html.ennoic-landing-document")).to_be_attached()
-                expect(ios_page.locator("[data-pwa-install-slot]")).to_be_hidden()
-                results["standalone_install_control_hidden"] = "passed simulated iOS standalone mode"
+                expect(ios_page).to_have_url(origin + "/app")
+                expect(ios_page.locator("[data-app-welcome]")).to_be_visible()
+                expect(ios_page.locator("[data-pwa-install-slot]")).to_have_count(0)
+                results["standalone_legacy_launch"] = "passed simulated iOS standalone / to /app upgrade; no install prompt"
                 results["page_errors"] = errors
                 assert not errors, errors
                 browser.close()
             (output / "results.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
             print(json.dumps(results, indent=2))
         finally:
+            pricing_gate.set()
             server.shutdown()
             server.server_close()
 

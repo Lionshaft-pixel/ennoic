@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  {% include "_pwa_head.html" %}
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="csrf-token" content="{{ auth_context.csrfToken }}">
+  <meta name="ennoic-auth-context" content="{{ auth_context|tojson|forceescape }}">
+  <title>Welcome to Ennoic</title>
+  <link rel="stylesheet" href="/static/app-welcome.css">
+  <script src="/static/app-welcome.js" nonce="{{ csp_nonce }}" defer></script>
+</head>
+<body class="app-welcome">
+  {# Reuses the orange event-horizon ring and glow from the existing auth page. #}
+  <div class="welcome-universe" aria-hidden="true">
+    <div class="welcome-horizon"></div>
+    <div class="welcome-glow"></div>
+  </div>
+  <main class="welcome-shell" data-app-welcome>
+    <a class="welcome-brand" href="/app" aria-label="Ennoic home">
+      <img src="/static/email/ennoic-logo.png" alt="Ennoic" width="591" height="157">
+    </a>
+    <section class="welcome-card" aria-label="Account access">
+      {% if reset_token %}
+      <h1>Choose a new password</h1>
+      <p class="welcome-description">Make it something only you know.</p>
+      {% elif email_action %}
+      <h1>{{ 'Verify your email' if email_action == 'verify' else 'Reset your password' }}</h1>
+      <p class="welcome-description">{{ 'We’ll send a verification link if your account needs one.' if email_action == 'verify' else 'Enter your email to request a secure reset link.' }}</p>
+      {% else %}
+      <h1>{{ 'Make room for what matters.' if active_form == 'register' else 'Welcome to your space.' }}</h1>
+      <p class="welcome-description">Your thoughts, tasks, and next steps. Together.</p>
+      {% endif %}
+
+      {% if auth_error %}<p class="welcome-message welcome-error" role="alert">{{ auth_error }}</p>{% endif %}
+      {% if auth_notice %}<p class="welcome-message" role="status">{{ auth_notice }}</p>{% endif %}
+
+      {% if reset_token %}
+      <form method="post" action="{{ url_for('reset_password', token=reset_token) }}" class="welcome-form">
+        <input type="hidden" name="csrf_token" value="{{ auth_context.csrfToken }}">
+        <label for="password">New password</label>
+        <input id="password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required placeholder="12 to 128 characters">
+        <button class="welcome-primary" type="submit">Change password</button>
+      </form>
+      {% elif email_action %}
+      <form method="post" action="{{ url_for('resend_verification' if email_action == 'verify' else 'request_password_reset') }}" class="welcome-form">
+        <input type="hidden" name="csrf_token" value="{{ auth_context.csrfToken }}">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="email" inputmode="email" maxlength="254" value="{{ email }}" required placeholder="you@example.com">
+        <button class="welcome-primary" type="submit">Send {{ 'verification' if email_action == 'verify' else 'reset' }} link</button>
+      </form>
+      {% else %}
+      <a class="welcome-google" href="{{ url_for('google_login') }}">
+        <svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6C44.4 38.02 46.98 31.86 46.98 24.55z"/><path fill="#FBBC05" d="M10.53 28.59A14.41 14.41 0 0 1 9.75 24c0-1.59.27-3.13.76-4.59l-7.98-6.19A23.87 23.87 0 0 0 0 24c0 3.87.94 7.53 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.91-5.8l-7.73-6c-2.15 1.45-4.92 2.3-8.18 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        Continue with Google
+      </a>
+      <div class="welcome-divider"><span>or use email</span></div>
+      <form method="post" action="{{ url_for('continue_auth') }}" class="welcome-form" data-welcome-email>
+        <input type="hidden" name="csrf_token" value="{{ auth_context.csrfToken }}">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="email" inputmode="email" maxlength="254" value="{{ email }}" required placeholder="you@example.com">
+        <div class="welcome-password" data-welcome-password>
+          <label for="password">Password</label>
+          <div class="welcome-password-field">
+            <input id="password" name="password" type="password" autocomplete="{{ 'new-password' if active_form == 'register' else 'current-password' }}" minlength="12" maxlength="128" required placeholder="{{ 'Create a password' if active_form == 'register' else 'Your password' }}">
+            <button type="button" data-password-toggle aria-label="Show password">Show</button>
+          </div>
+          <p class="welcome-email-note">{{ 'Use 12 to 128 characters. We’ll email a verification link.' if active_form == 'register' else 'Use your existing password, or choose one to create an account.' }}</p>
+        </div>
+        <button class="welcome-primary" type="submit" data-email-continue>Continue</button>
+      </form>
+      <nav class="welcome-help" aria-label="Account help">
+        <a href="{{ url_for('app_email_help') }}">Forgot password?</a>
+        <a href="{{ url_for('app_email_help', action='verify') }}">Verify email</a>
+      </nav>
+      <p class="welcome-signup">{{ 'Already have an account?' if active_form == 'register' else 'New to Ennoic?' }} <a href="{{ url_for('app_launch') if active_form == 'register' else url_for('app_launch', form='register') }}">{{ 'Sign in' if active_form == 'register' else 'Create an account' }}</a></p>
+      {% endif %}
+      {% if reset_token or email_action %}<a class="welcome-back" href="/app">Back to sign in</a>{% endif %}
+    </section>
+    <footer class="welcome-footer">
+      <p>By continuing, you agree to our <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p>
+      <p class="welcome-security">For account security, Ennoic records your IP address when you sign in.</p>
+    </footer>
+  </main>
+</body>
+</html>

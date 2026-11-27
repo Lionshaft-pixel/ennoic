@@ -458,13 +458,12 @@ class EntitlementTests(unittest.TestCase):
         ).get_json()
 
         self.assertIn('<details class="upi-notice" id="india-upi-autopay-notice" hidden>', page)
-        self.assertIn("₹179/month with UPI AutoPay", page)
-        self.assertIn(
-            "Your subscription is ₹179/month. UPI payments are processed by Paddle. "
-            "Your UPI app may display 'Paddlecom' and a maximum authorization limit of ₹15,000. "
-            "This is not an upfront ₹15,000 charge.",
-            page,
-        )
+        self.assertIn("Ennoic Pro renews monthly at the price confirmed in Paddle Checkout", page)
+        self.assertIn("If your UPI app shows ₹15,000 as a maximum authorization", page)
+        self.assertIn("that limit is not the monthly subscription price", page)
+        self.assertIn("the authorization's validity date, not a prepaid subscription term", page)
+        self.assertIn("cancel the Paddle subscription as well", page)
+        self.assertNotIn("Your subscription is ₹179/month", page)
         self.assertLess(page.index('id="upgrade"'), page.index('id="india-upi-autopay-notice"'))
         self.assertIn("/static/pricing-region.js", page)
         self.assertEqual(india_pricing["selected_currency"], "INR")

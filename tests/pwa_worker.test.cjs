@@ -81,7 +81,7 @@ test("precache contains exactly public offline resources fetched without credent
 test("private/auth/payment/API and unapproved requests bypass the worker entirely", () => {
   const sw = worker();
   for (const path of ["/api/tasks", "/api/chat", "/api/conversations", "/api/auth/me", "/api/csrf",
-    "/api/entitlements", "/login", "/auth/google", "/auth/google/callback?code=secret",
+    "/api/entitlements", "/login", "/app/email-help", "/app?form=register", "/auth/google", "/auth/google/callback?code=secret",
     "/auth/logout", "/auth/password-reset/token", "/checkout", "/checkout/success",
     "/api/paddle/portal", "/static/script.js", "/static/workspace.css", "/static/landing-page.html",
     "/static/authentication-page.html", "/?token=secret", "https://accounts.google.com/", "https://checkout.paddle.com/"]) {
@@ -99,9 +99,11 @@ test("navigations stay fresh online, fallback offline, and never populate the ca
   await sw.lifecycle("install");
   const online = await sw.fetch("/", {mode: "navigate"});
   assert.equal(await online.text(), "network content");
+  assert.equal(await (await sw.fetch("/app", {mode: "navigate"})).text(), "network content");
   sw.offline();
   const offline = await sw.fetch("/settings", {mode: "navigate"});
   assert.equal(await offline.text(), "public fallback");
+  assert.equal(await (await sw.fetch("/app", {mode: "navigate"})).text(), "public fallback");
   sw.online();
   assert.equal(await (await sw.fetch("/", {mode: "navigate"})).text(), "network content");
   assert.deepEqual([...([...sw.cacheData.values()][0].keys())], assets);

@@ -10,7 +10,7 @@ const PUBLIC_ASSETS = [
   "/static/pwa/offline.js",
   "/static/email/ennoic-logo.png",
 ];
-const OFFLINE_PAGES = new Set(["/", "/settings", "/pricing", "/terms", "/privacy", "/refund-policy"]);
+const OFFLINE_PAGES = new Set(["/", "/app", "/settings", "/pricing", "/terms", "/privacy", "/refund-policy"]);
 
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {

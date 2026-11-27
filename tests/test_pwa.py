@@ -33,7 +33,7 @@ class PwaTests(unittest.TestCase):
         self.assertEqual(response.mimetype, "application/manifest+json")
         manifest = json.loads(response.data)
         self.assertEqual((manifest["name"], manifest["short_name"]), ("Ennoic", "Ennoic"))
-        self.assertEqual((manifest["id"], manifest["start_url"], manifest["scope"]), ("/", "/", "/"))
+        self.assertEqual((manifest["id"], manifest["start_url"], manifest["scope"]), ("/", "/app", "/"))
         self.assertEqual(manifest["display"], "standalone")
         self.assertFalse(manifest["prefer_related_applications"])
         self.assertEqual({icon["purpose"] for icon in manifest["icons"]}, {"any", "maskable"})

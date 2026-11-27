@@ -116,10 +116,11 @@ li svg{flex:none;margin-top:2px}
         <ul id="pro-features"></ul>
         <span class="sub" id="entitlements-loading" role="status" {% if not authenticated %}hidden{% endif %}>Loading plan…</span>
         <button class="btn main" id="upgrade" type="button" disabled {% if authenticated %}hidden{% endif %}>Upgrade to Pro</button>
-        <!-- Temporary India UPI AutoPay notice; remove when Razorpay is available for Indian customers. -->
         <details class="upi-notice" id="india-upi-autopay-notice" hidden>
-          <summary>₹179/month with UPI AutoPay; ₹15,000 is an authorization limit, not an upfront charge.</summary>
-          <p>Your subscription is ₹179/month. UPI payments are processed by Paddle. Your UPI app may display 'Paddlecom' and a maximum authorization limit of ₹15,000. This is not an upfront ₹15,000 charge.</p>
+          <summary>Paying with UPI AutoPay? Review the monthly charge and mandate details.</summary>
+          <p>Ennoic Pro renews monthly at the price confirmed in Paddle Checkout, including any applicable tax. If your UPI app shows ₹15,000 as a maximum authorization, that limit is not the monthly subscription price. Review both the charge and the mandate before approving.</p>
+          <p>A mandate end date, even several years away, is the authorization's validity date, not a prepaid subscription term. Monthly renewals continue until you cancel.</p>
+          <p>To stop renewals, open Settings → Manage subscription and cancel in Paddle. Active subscriptions normally remain available until the end of the paid billing period. You can also revoke AutoPay in your UPI app; cancel the Paddle subscription as well to keep its billing status up to date.</p>
         </details>
         <button class="btn ghost" id="entitlements-retry" type="button" hidden>Retry</button>
       </section>
@@ -138,7 +139,7 @@ li svg{flex:none;margin-top:2px}
   <a href="mailto:ennoic.app@gmail.com">ennoic.app@gmail.com</a>
 </footer>
 
-<script src="https://cdn.paddle.com/paddle/v2/paddle.js" nonce="{{ csp_nonce }}"></script>
+<script src="https://cdn.paddle.com/paddle/v2/paddle.js" nonce="{{ csp_nonce }}" defer></script>
 <script src="{{ url_for('static', filename='pricing-region.js') }}" nonce="{{ csp_nonce }}"></script>
 
 <script nonce="{{ csp_nonce }}">
@@ -290,7 +291,6 @@ function loadEntitlements() {
 }
 $('entitlements-retry').addEventListener('click', loadEntitlements);
 window.addEventListener('pageshow', function (event) { if (event.persisted) loadEntitlements(); });
-loadEntitlements();
 
 $('upgrade').onclick = function () {
   if (!authenticated) { window.location.assign('/login'); return; }
@@ -316,7 +316,12 @@ $('upgrade').onclick = function () {
     .finally(function () { $('upgrade').disabled = false; });
 };
 
-load();
+// Deferred Paddle.js executes before DOMContentLoaded. Let the page render
+// while it downloads, then retain the existing pricing/checkout initialization.
+document.addEventListener('DOMContentLoaded', function () {
+  loadEntitlements();
+  load();
+});
 </script>
 </body>
 </html>

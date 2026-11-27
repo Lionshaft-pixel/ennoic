@@ -331,14 +331,17 @@ class PaddleAPI:
             return general
         raise PaddleUnavailable("Paddle did not return a customer portal link.")
 
-    def _subscription_request(self, method, subscription_id, *, body=None):
+    def _subscription_request(self, method, subscription_id, *, body=None, cancel=False):
         if (not isinstance(subscription_id, str) or not subscription_id.startswith("sub_")
                 or not all(char.isascii() and (char.isalnum() or char == "_") for char in subscription_id)):
             raise PaddleUnavailable("The stored Paddle subscription reference is invalid.")
+        endpoint = f"{self.base_url}/subscriptions/{quote(subscription_id, safe='')}"
+        if cancel:
+            endpoint += "/cancel"
         try:
             response = requests.request(
                 method,
-                f"{self.base_url}/subscriptions/{quote(subscription_id, safe='')}",
+                endpoint,
                 headers={
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json",
@@ -397,7 +400,7 @@ class PaddleAPI:
         )
         try:
             updated = self._subscription_request(
-                "POST", subscription_id, body={"effective_from": effective_from}
+                "POST", subscription_id, body={"effective_from": effective_from}, cancel=True
             )
         except PaddleUnavailable as cancel_error:
             # The provider may have accepted the request before a timeout. Re-read

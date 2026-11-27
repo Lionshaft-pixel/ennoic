@@ -2,43 +2,46 @@
 
 This directory is independent of Flask, Python dependencies, Render's build, and the PWA. It wraps `https://ennoic.onrender.com/` in a Trusted Web Activity (TWA), using the device's browser engine. Google Play is optional: a signed APK can be installed directly.
 
-## Current status — 28 November 2026
+## Current mobile release ? 28 November 2026
 
-**The PWA is deployed and healthy.** PWA commit `b0a419b762ca63638a3fefaa3bf05b6b926b2c3c` and pooled-readiness fix `228da55c4d229ffa21bb0dd602bdd364cb1c7e32` were pushed normally to `vibecoded`, triggering Render. Production `/healthz` and `/readyz` now return 200 repeatedly. Manifest, worker, all five icons, offline fallback, root worker control, Chromium installability, cache privacy, network recovery, and iOS installation instructions passed live checks. See [the PWA report](../docs/PWA.md#deployment-results).
+An updated signed test APK has been generated for the mobile/tablet polish release. The same package and certificate allow it to update the code-1 build already tested on the Realme Pad X. The native splash changes require this APK update; the welcome/layout/navigation changes are served by the website. See [the mobile report](../docs/MOBILE_UX.md), [PWA results](../docs/PWA.md), and [checkout/Google review](../docs/MOBILE_CHECKOUT_REVIEW.md).
 
-**A signed test APK was generated and verified:** `android/build/ennoic-test-debug.apk` (relative to the repository root). Bubblewrap **1.28.0** generated the project from the live production manifest; Gradle `assembleDebug` completed successfully in 3m44s after correcting the upstream minimum-SDK mismatch below. The Android testing follow-up explicitly configures its public debug certificate as the website's default Digital Asset Links association. This is a test identity; no release signing identity has been configured.
-
-Available tooling: Node 24.6.0, npm 11.5.2, existing Android SDK platform 36 and build tools 36.0.0/36.1.0. A portable **Temurin JDK 17.0.21.1+2** was downloaded from Adoptium's official release, SHA-256 verified, and extracted to `%LOCALAPPDATA%\EnnoicAndroidToolchain\jdk-17.0.21.1+2`. Archive SHA-256: `eafba0944f777abdc74d5aad16049c9b5a1275b6ce99e2939ba9f7f3e6f08c87`. Gradle 8.11.1 automatically installed required SDK Build-Tools **35.0.0** using the existing accepted SDK license. The system Java 8 installation and machine environment were not changed. Android SDK command-line tools were absent; the successful debug workflow used the SDK directly.
-
-Only the Android directory has local npm dependencies. Flask/Render do not install or use them. Generated projects, build outputs, signing material, and local logs remain ignored.
-
-## Verified artifact
-
-| Property | Actual result |
+| Property | Verified result |
 | --- | --- |
 | Delivered file | `android/build/ennoic-test-debug.apk` (ignored local artifact) |
+| Absolute Windows path | `C:\Users\anuka\Desktop\ENNOIC\android\build\ennoic-test-debug.apk` |
 | Original build output | `android/generated/app/build/outputs/apk/debug/app-debug.apk` |
-| Size | 5,531,296 bytes |
-| APK SHA-256 | `49daeef2d60af06928cb7496786f6482838865e8ae07a416fddb687482a7048a` |
-| Signature verification | `apksigner verify` exit 0; APK Signature Scheme v2 verified |
-| Application | `com.ennoic.app`, Ennoic, version `0.1.0-test`, code `1` |
+| Size | 5,551,545 bytes |
+| APK SHA-256 | `e70278e284be52ff94e8ae698ef47fc861f93e58bfe5dc9aa160e59fb5149497` |
+| Signature | `apksigner verify` passed; APK Signature Scheme v2; identical certificate to the old APK |
+| Application | `com.ennoic.app`, Ennoic, version `0.2.0-test`, code `2` |
 | Android versions | Minimum API 24; target/compile SDK 36 |
-| Launcher / launch URL | `com.ennoic.app.LauncherActivity`; `https://ennoic.onrender.com/` |
-| Permissions/configuration | Notifications disabled; no `POST_NOTIFICATIONS`; no additional trusted origins; Custom Tabs fallback |
-| Signing identity | Standard user-local `~/.android/debug.keystore`; no release key generated |
-| Device installation | Not performed: `adb devices` listed no connected devices |
+| Launcher / URL | `com.ennoic.app.LauncherActivity`; `https://ennoic.onrender.com/app` |
+| Native splash | White launcher/window backgrounds, static original centered wordmark, zero TWA fade; compiled API-31 theme and vector checked |
+| Permissions / origins | Notifications disabled; no `POST_NOTIFICATIONS`; no additional trusted origins; Custom Tabs fallback |
+| Signing key | Existing external `~/.android/debug.keystore`; no new key, password collection, or release identity |
+| Previous artifact | Preserved locally as `android/build/ennoic-test-debug-v1.apk` |
+| Physical installation | Previous build tested by the owner on Realme Pad X; this update still requires on-device validation |
 
-Public **debug certificate** SHA-256 fingerprint (different from the APK file hash):
+Public **certificate** SHA-256 (different from the APK file hash):
 
 ```text
 60:F5:54:7E:71:0B:4A:3C:D0:6C:0F:8D:CB:8F:EB:80:17:6C:65:D7:7E:D8:21:C1:9A:4B:0E:75:72:2A:78:98
 ```
 
-The website's checked-in DAL default now associates this exact certificate with `com.ennoic.app`. The existing APK was reverified directly with `apksigner`, its package was checked with `aapt`, and its file hash is unchanged; no APK rebuild is needed for this server-side change. Native installation, splash, complete OAuth/payment handoffs, tasks/chat, close/reopen, and toolbar-free TWA behavior still require a real device/account. A debug APK cannot update an APK signed with a different certificate; uninstall the test wrapper when moving to an incompatible release signing identity.
+The package-bound website DAL default continues to trust this exact certificate. No association change or provider-console setting is required for this update. Post-push live health/DAL verification is recorded in the final PWA release results.
 
-The DAL follow-up passed **123 Python tests and 11 Node tests**, including exact certificate/default response, public headers/no database access, package isolation, valid replacement, multiple-certificate normalization/deduplication, empty revocation, and invalid configuration. UI, account/task/AI behavior, and the APK binary are unchanged.
+The build used Node 24.6.0/npm 11.5.2, Bubblewrap CLI/core 1.28.0, Gradle 8.11.1, AGP 8.9.1, Browser Helper 2.8.0, SDK platform 36/build tools 35.0.0, and portable Temurin JDK 17.0.21.1+2 under `%LOCALAPPDATA%/EnnoicAndroidToolchain`. No machine Java/environment setting changed. The final incremental build passed in 2m11s with a process-only 512 MB Gradle heap after Windows rejected the default 1.5 GB heap. Generated resources, actual APK metadata, compiled vector paths and signatures were inspected before replacing the delivered file.
 
-Production verification after pushing `725fff75a13284dcf40b07ec46639aa493f2e8c6` to `vibecoded`: `https://ennoic.onrender.com/.well-known/assetlinks.json` returned HTTP 200, `application/json`, no redirect/cookie, and the exact package/certificate extracted from the APK. Google's Digital Asset Links `assetlinks:check` API returned **`linked: true`**. `/healthz`, `/readyz`, the manifest, and the service worker also returned 200. No Render environment update or APK rebuild was necessary. This confirms the server association; physical phone launch remains untested.
+### Splash implementation and constraints
+
+`resources/values/ennoic_launch.xml` and its API-31 variant style only the launcher. White system/window backgrounds, dark status/navigation icons and a static `ennoic_splash_icon` replace the old boxed splash. The Browser Helper handoff uses that same centered vector on white, with zero fade. There is no separate splash Activity, timer or artificial wait.
+
+`scripts/generate_android_splash.py` crops empty margins from the actual `static/email/ennoic-logo.png` and encodes its original pixel geometry and nine ink colors as compact, hole-preserving vector contours. Overlapping contours avoid scaling seams; path lengths are checked against Android resource limits. No new logo, typography or decorative artwork was introduced. Regenerate from the repo root with `python scripts/generate_android_splash.py` (optional Pillow dependency).
+
+Android 12+ controls the initial launch window, sizing/masking and system entry motion. The 288 dp drawable contains a centered 180 dp-wide wordmark inside the 192 dp safe circle. This is the closest platform-compatible static full-wordmark treatment; exact OEM appearance and the system-to-browser handoff must be checked on the Realme. Older Android devices use the white starting window and Browser Helper handoff. See [Android splash guidance](https://developer.android.com/develop/ui/views/launch/splash-screen).
+
+Only Android's directory has npm dependencies; Flask/Render do not use them. Generated projects, APKs, signing material, logs and local QA remain ignored. This is a debug test identity; choose a deliberate release identity before public distribution.
 
 ## Install and launch on your phone
 
@@ -52,9 +55,9 @@ Production verification after pushing `725fff75a13284dcf40b07ec46639aa493f2e8c6`
    adb install -r ".\android\build\ennoic-test-debug.apk"
    ```
 
-5. Launch **Ennoic from its Android app icon**. Opening the website in an ordinary browser tab does not test APK/TWA verification. If an older wrapper uses an incompatible signing certificate, uninstall that wrapper before installing this one.
+5. Launch **Ennoic from its Android app icon**. Opening the website in an ordinary browser tab does not test APK/TWA verification. Choose Update for the existing code-1 test build: its package and certificate match. Do not uninstall it for this update. Only an unrelated incompatible signing identity requires uninstalling or a separately planned migration.
 
-Expect the existing Ennoic branding/splash and website interface. On a supported browser with successful verification, Ennoic pages should have **no address bar, browser overflow menu, or Custom Tab close button**. Android's system status/navigation bars may remain: their presence does not mean verification failed. Google sign-in and other external domains can legitimately show browser controls; returning to the Ennoic origin should restore the verified app view.
+Expect a white centered-wordmark splash, then the black-hole welcome if signed out or your existing dashboard if signed in. Native launch appearance still needs device confirmation. On a supported browser with successful verification, Ennoic pages should have **no address bar, browser overflow menu, or Custom Tab close button**. Android's system status/navigation bars may remain: their presence does not mean verification failed. Google sign-in and other external domains can legitimately show browser controls; returning to the Ennoic origin should restore the verified app view.
 
 If the Ennoic origin still shows browser controls, first check the live DAL endpoint against the package/fingerprint above, update Chrome, ensure the phone is online, close/force-stop Ennoic and relaunch. A previously failed association can be cached; allow time and retry. Do not clear browser data or bypass verification. On Android 12+, `adb shell pm verify-app-links --re-verify com.ennoic.app` and `adb shell pm get-app-links com.ennoic.app` help diagnose OS App Links, but only launching the app confirms toolbar-free TWA behavior. To identify the chosen browser while launching, use `adb logcat -v brief | Select-String TWAProviderPicker` in PowerShell. Check the actual selected browser if another default browser is installed.
 
@@ -73,7 +76,7 @@ If the Ennoic origin still shows browser controls, first check the live DAL endp
 `ennoic.config.json` records the intended answers to Bubblewrap's initialization prompts. It is a reference configuration, **not** a complete generated `twa-manifest.json`. The CLI does not consume it automatically; `generate-debug.cjs` does.
 
 - Application ID: **`com.ennoic.app`**, provisional. Confirm ownership/naming before distribution. Keep `ennoic.config.json`, the generated manifest, and `ENNOIC_ANDROID_PACKAGE_ID` aligned when finalizing it. Regenerate/update the project after changing it. Changing the ID after distribution creates a different Android app.
-- Name/launcher name: Ennoic. Host: `ennoic.onrender.com`. Start path: `/`.
+- Name/launcher name: Ennoic. Host: `ennoic.onrender.com`. Start path: `/app` (browser `/` remains the marketing page).
 - Manifest, scope, icons, and colors match the PWA. Use the existing wordmark icons, including the maskable icon.
 - Notifications disabled. Keep `additionalTrustedOrigins` empty: Google and payment providers should retain their browser security UI.
 - Minimum Android API **24 (Android 7.0)**. Bubblewrap 1.28.0 defaults to API 21, but its Android Browser Helper 2.8.0 dependency requires API 24. The first build's manifest merger exposed this mismatch; `minSdkVersion: 24` in the reference configuration resolves it without forcing incompatible library use. Target/compile SDK is 36.
@@ -90,12 +93,12 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 npm install
 npm run generate-debug
 Push-Location generated
-try { .\gradlew.bat --no-daemon assembleDebug } finally { Pop-Location }
+try { .\gradlew.bat --no-daemon --max-workers=1 '-Dorg.gradle.jvmargs=-Xmx512m -XX:MaxMetaspaceSize=256m -XX:+UseSerialGC' assembleDebug } finally { Pop-Location }
 ```
 
 On another computer, replace the JDK/SDK paths with its actual installations. Obtain a portable JDK from [Adoptium](https://adoptium.net/installation/archives) and verify its published checksum before executing it. Install required Android SDK components from the [official Android tools](https://developer.android.com/studio#command-line-tools-only).
 
-`generate-debug.cjs` uses Bubblewrap's pinned core generator and the deployed manifest, overlays the Ennoic configuration, validates it, and writes `generated/twa-manifest.json` and the Gradle project. It references the standard user-local `~/.android/debug.keystore`; Gradle supplies debug signing without collecting a password. It refuses to replace a manifest with a non-debug signing alias. Regeneration overwrites generated project files; keep release projects separately. Debug version is `0.1.0-test`, code `1`.
+`generate-debug.cjs` uses Bubblewrap's pinned core generator and the deployed manifest, overlays the Ennoic configuration, validates it, and writes `generated/twa-manifest.json` and the Gradle project. It references the standard user-local `~/.android/debug.keystore`; Gradle supplies debug signing without collecting a password. It refuses to replace a manifest with a non-debug signing alias. Regeneration overwrites generated project files; keep release projects separately. Debug version is `0.2.0-test`, code `2`. The helper requires the existing external debug keystore to be present so Gradle cannot silently generate a different identity. It overlays the embedded web-manifest launch/background metadata and reapplies the checked-in native resources/theme after regeneration. Restore the original key securely on another machine before building an update.
 
 The expected Gradle artifact is `generated/app/build/outputs/apk/debug/app-debug.apk`. Confirm the build succeeded before using it. Verify with SDK tools:
 
@@ -171,7 +174,7 @@ Fetch `https://ennoic.onrender.com/.well-known/assetlinks.json` and confirm HTTP
 
 ## Release signing and updates
 
-Back up the release keystore securely outside Git, with encrypted backups and passwords managed separately. Keep the alias and certificate fingerprint recorded with release operations. Direct APK updates must use the same application ID and compatible signing identity; increase `appVersionCode` for each release. Regenerate with `npm run update`, review the generated manifest/version, then `npm run build`. Bubblewrap updates can overwrite generated Android files, so maintain intended settings in the generated TWA manifest rather than making undocumented Gradle edits.
+Back up the release keystore securely outside Git, with encrypted backups and passwords managed separately. Keep the alias and certificate fingerprint recorded with release operations. Direct APK updates must use the same application ID and compatible signing identity; increase `appVersionCode` for each release. Regenerate with `npm run update`, review the generated manifest/version, then `npm run build`. Bubblewrap updates can overwrite generated Android files. The debug helper reapplies checked-in `resources/` and the launcher-theme/splash metadata integration; apply the same reviewed overlay deliberately to a separate release project. Keep identity/version settings in the TWA configuration rather than undocumented Gradle edits.
 
 If distributing through Play App Signing, use the **Play app signing certificate** in production Digital Asset Links. The upload certificate can differ and does not verify the APK delivered by Play. Directly distributed APKs use their actual signing certificate. Choose distribution/signing continuity deliberately; Google Play enrollment is not needed for local or direct APK distribution.
 

@@ -544,6 +544,13 @@ def _send_token_email(user, purpose):
 
 
 def _auth_template(**values):
+    # This flag is set only by the dedicated installed-app entry route and is
+    # carried in Flask's signed session, never inferred from a user agent or an
+    # arbitrary return URL. Browser visits to / keep their existing landing page.
+    app_launch = session.get("app_launch") is True
+    if app_launch:
+        values.setdefault("email", request.form.get("email", "")[:254])
+        values.setdefault("email_action", None)
     g.auth_csp_nonce = secrets.token_urlsafe(18)
     values.setdefault("active_form", "login")
     values.setdefault("auth_error", None)
@@ -557,7 +564,7 @@ def _auth_template(**values):
         "resetToken": values["reset_token"],
     }
     return render_template(
-        "authentication.html",
+        "app_welcome.html" if app_launch else "authentication.html",
         auth_context=auth_context,
         csp_nonce=g.auth_csp_nonce,
         **values,
@@ -599,13 +606,33 @@ def _post_login_redirect():
     target = session.pop("login_next", None)
     if target == url_for("checkout_page"):
         return redirect(target)
-    return redirect(url_for("home"))
+    return redirect(url_for("app_launch" if session.get("app_launch") is True else "home"))
+
+
+@app.route("/app")
+def app_launch():
+    """Stable installed-app launch URL, without changing the browser homepage."""
+    session["app_launch"] = True
+    if current_user.is_authenticated:
+        return home()
+    return _auth_template(active_form="register" if request.args.get("form") == "register" else "login")
+
+
+@app.route("/app/email-help")
+def app_email_help():
+    session["app_launch"] = True
+    if current_user.is_authenticated:
+        return redirect(url_for("app_launch"))
+    action = "verify" if request.args.get("action") == "verify" else "reset"
+    return _auth_template(email_action=action)
 
 
 @app.route("/")
 def home():
     if current_user.is_authenticated:
-        account_plan = entitlements.account_entitlements(current_user.id)["plan"]
+        # Initial HTML only needs subscription status; usage counters load via
+        # /api/entitlements. Avoid three extra database round trips on navigation.
+        account_plan = entitlements.account_subscription_status(current_user.id)["plan"]
         return render_template(
             "index.html", user=current_user, account_plan=account_plan,
             csrf_token=generate_csrf(),
@@ -617,7 +644,7 @@ def home():
 @app.route("/settings")
 @login_required
 def settings_page():
-    account = entitlements.account_entitlements(current_user.id)
+    account = entitlements.account_subscription_status(current_user.id)
     return render_template(
         "settings.html",
         user=current_user,
@@ -899,7 +926,7 @@ def login_page():
 @app.route("/auth/google")
 def google_login():
     if current_user.is_authenticated:
-        return redirect(url_for("home"))
+        return _post_login_redirect()
     if not _google_oauth_configured():
         return _google_login_error("Google sign-in is not configured. Ask the server administrator.", 503)
 
@@ -1125,9 +1152,10 @@ def login():
 @app.route("/auth/logout", methods=["POST"])
 @login_required
 def logout():
+    app_launch = session.get("app_launch") is True
     logout_user()
     session.clear()
-    return redirect(url_for("home"))
+    return redirect(url_for("app_launch" if app_launch else "home"))
 
 
 @app.route("/auth/verify/<token>")
@@ -1217,8 +1245,11 @@ def change_password():
         notify_discord("server_error", endpoint="change_password", error_type="PasswordUpdateFailed")
         return jsonify({"error": "The password could not be changed."}), 500
     updated = account_store.get_user(user["id"])
+    app_launch = session.get("app_launch") is True
     logout_user()
     session.clear()
+    if app_launch:
+        session["app_launch"] = True
     login_user(Account(updated), fresh=True)
     session["account_auth_version"] = updated["auth_version"]
     session.permanent = True

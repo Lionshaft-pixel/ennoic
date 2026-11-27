@@ -2,17 +2,42 @@
 
 Audited 27 November 2026 and revalidated 28 November 2026 against original production commit `9c0736fd9d28a90065de9679b06101bbce42433f` on `vibecoded`. The PWA implementation is preserved in commit `b0a419b762ca63638a3fefaa3bf05b6b926b2c3c`. The user authorized the readiness fix, verified production push, and local Android test build. Routes, templates, branding, public cache boundaries, deployment configuration, tests, scripts, and Android preparation were reviewed. Production/build outcomes are recorded below.
 
+## Current mobile-polish release ? 28 November 2026
+
+The follow-up adds `/app` installed launch, the original black-hole welcome artwork/direct email authentication, responsive chat spacing, immediate navigation feedback, accessible touch polish, clearer UPI disclosures and a white native splash. Browser `/` retains the existing marketing page. Prices, entitlements, database schemas and AI prompts are unchanged. A pre-existing Paddle cancellation transport URL was corrected with mocked regression coverage. See [the mobile report and exact file inventory](MOBILE_UX.md) and [provider findings/manual console steps](MOBILE_CHECKOUT_REVIEW.md).
+
+- Full isolated Python suite: **132/132 passed**, zero failures/errors (215.652 s).
+- Full Node suite: **19/19 passed**, including navigation behavior, worker privacy/offline, pricing region and deferred-SDK initialization.
+- Full isolated Edge browser regression: **passed, no page errors**. Browser and installed email login/logout, verification/help navigation, mocked Google token/identity callback with the browser cookie jar, fixed `/app` return, task CRUD/completion, chat/history, settings, session reopening, five pricing viewports, generic offline/recovery, exact public cache, worker v1→v2 update without reload, installability, iOS instructions and simulated legacy standalone launch all passed. Held-response navigation feedback appeared in about 4.9 ms. Real Google/Paytm interaction and native standalone windows are device checks.
+- Updated APK: **0.2.0-test / code 2**, `com.ennoic.app`, existing certificate preserved; 5,551,545 bytes. File SHA-256 `e70278e284be52ff94e8ae698ef47fc861f93e58bfe5dc9aa160e59fb5149497`.
+- Native build: Gradle passed; actual package/version/SDK/launch `/app`, compiled white API-31 splash/vector, embedded white `/app` manifest, no notification permission and v2 signing verified. Previous code-1 APK retained locally.
+- The test device is not connected here. This update's native splash, complete real provider handoffs and actual Realme network responsiveness require owner testing. The previous APK was tested by the owner on that tablet.
+
+Post-push production results will be recorded in the release-verification update after the normal `vibecoded` push. Earlier tables in this report describe the original PWA/readiness/DAL releases, not this follow-up's test totals or APK binary.
+
 ## Behavior
 
 Ennoic keeps its Flask backend, existing routes, responsive layouts, accounts, task logic, AI prompts, billing, and database schema. The new public resources are isolated in a Flask blueprint. Static/PWA resource requests no longer need to initialize the account database or start its background worker.
 
-`/manifest.webmanifest` declares Ennoic, stable app identity `/`, start URL `/`, scope `/`, and `standalone` display. Black `#0b0504` matches the existing landing background; orange `#e8650f` is used on the offline retry control. The browser/OS controls the actual installed window and splash presentation.
+`/manifest.webmanifest` declares Ennoic, stable app identity `/`, installed start URL `/app`, scope `/`, and `standalone` display. Keeping the identity `/` avoids treating the updated start URL as a different PWA. The splash background is white `#ffffff`; the window theme remains the existing black `#0b0504`. Orange `#e8650f` is used on the offline retry control. The browser/OS controls the actual installed window and splash presentation; the web app adds no timed splash or artificial loading delay.
 
 All icons derive from **the existing `static/email/ennoic-logo.png` wordmark**. Only empty margins are cropped, then the original image is resized/padded on white. No new symbol, font, or logo was introduced. PNGs include ordinary 192/512, separate maskable 192/512, and Apple 180 icons. Maskable artwork fits within the central 80%-diameter safe circle. The original source image is unchanged. Regenerate with `python scripts/generate_pwa_icons.py` (optional development dependency: Pillow).
 
 An optional install control appears in the landing footer, app sidebar, and Settings > General when Chromium exposes `beforeinstallprompt`. Unsupported browsers continue normally. On iOS it shows expandable Safari Add to Home Screen instructions. Installed standalone windows hide the control. There is no automatic installation, push registration, or notification permission request.
 
 The landing and sign-in shells replace their document with saved HTML. They now preserve PWA metadata/styles and notify the install controller after replacement. Delegated installation clicks survive the landing renderer recreating elements. Existing bundle rendering and authentication integration remain in place. Script nonces are retained where required; CSP explicitly permits same-origin workers and manifests without adding `unsafe-eval` or new external permissions.
+
+### Installed-app launch and mobile polish
+
+`/app` is the explicit start URL for updated Android packaging and PWA installations. Authenticated launches render the existing dashboard directly. Unauthenticated launches render `app_welcome.html`: the original Ennoic wordmark, the orange event-horizon ring/glow from the existing authentication artwork, a prominent Google button, and direct email entry. The original wordmark pixels and proportions are retained; CSS adapts its contrast to the dark welcome. Gentle background motion stops when reduced motion is requested. There is no marketing-page bundle or secondary splash in this flow.
+
+The email button reveals the password field locally, then posts to the existing `/auth/continue` endpoint. It does not query whether an email address exists. Signup, email verification, password reset, account restoration, Google OAuth state/nonce/PKCE, canonical callback URLs, rate limits, and CSRF checks use the existing server flows. Passwords are never placed in a URL or persisted by the welcome script. `/app/email-help` provides forms for the existing protected reset and resend-verification actions.
+
+A signed Flask session preference, `app_launch`, records visits to the dedicated entry route. Successful email or Google authentication returns these sessions to `/app`, and logout returns to its welcome screen after clearing the authentication session. The preference grants no account access and accepts no arbitrary redirect URL. Existing allowlisted checkout continuation still takes precedence. Changing a password retains the app preference while preserving the existing session rotation. The Google callback remains `https://ennoic.onrender.com/auth/google/callback`.
+
+Ordinary browser visits to `/` retain the existing marketing page, including when another tab has visited `/app` in the shared browser session. Login pages in a session that has used the app entry may use the simplified welcome; this preference is shared wherever that browser shares cookies. Older PWA installations whose stored start URL is `/` are bridged to `/app` only when the browser reports standalone display mode or iOS standalone mode. Older Android launches also recognize the exact `android-app://com.ennoic.app` referrer. The redirect stays on this origin and preserves query/hash; no user-agent sniffing decides installed-app entry. Updated packaging does not depend on this compatibility bridge.
+
+Mobile and tablet chat receives a centered conversation column, comfortable responsive horizontal padding, aligned actions, and composer spacing. Existing desktop structure remains in place. Shared navigation feedback acknowledges a same-origin page transition immediately without adding a delay; returning through browser history clears its pending state. Mobile tap highlights are suppressed while keyboard focus indicators remain visible. Pricing and subscription entitlements remain unchanged. Android native splash settings and physical-device limitations are documented separately in [android/README.md](../android/README.md).
 
 ## Offline and update policy
 
@@ -29,7 +54,7 @@ The **only** Cache Storage entries created are:
 
 Installation fetches them without credentials, rejects redirects/failed responses, and uses the versioned `ennoic-public-offline-v1` cache. Activation removes only obsolete caches with that prefix. Bump the cache version whenever any of those four public assets changes.
 
-Normal application HTML, CSS, JavaScript, API responses, tasks, conversations, credentials, auth endpoints, checkout/payment data, and external resources are **never written to Cache Storage**. No runtime response caching or offline mutations occur. Auth/API/payment requests bypass the worker; their original handlers continue to run. The worker only supplies the generic offline page on a network failure navigating to `/`, `/settings`, `/pricing`, `/terms`, `/privacy`, or `/refund-policy`, without query parameters. HTTP error responses are not replaced. Other URLs, including authentication/token URLs, retain ordinary browser offline failures.
+Normal application HTML, CSS, JavaScript, API responses, tasks, conversations, credentials, auth endpoints, checkout/payment data, and external resources are **never written to Cache Storage**. No runtime response caching or offline mutations occur. Auth/API/payment requests bypass the worker; their original handlers continue to run. The worker only supplies the generic offline page on a network failure navigating to `/`, `/app`, `/settings`, `/pricing`, `/terms`, `/privacy`, or `/refund-policy`, without query parameters. `/app` is network-only while online, including its authenticated dashboard and unauthenticated welcome; neither response is cached. HTTP error responses are not replaced. Other URLs, including `/app/email-help`, authentication/token URLs, and query-bearing signup pages, retain ordinary browser offline failures.
 
 Offline users can read the generic message and retry. Tasks and chat require a connection. Network recovery displays a retry message; it does not replay requests or submit unsent content. Browser eviction/private-mode restrictions can remove or prevent offline support, while online browser operation remains available.
 
@@ -41,9 +66,11 @@ Sessions still use the existing secure-cookie configuration and 12-hour permanen
 
 All Python/browser runs used temporary SQLite data, suppressed loading `.env`, and avoided production credentials. Browser chat used a mocked AI provider with the real Flask endpoint, conversation persistence, and frontend. Tests did not create live charges or send messages to external services.
 
+The mobile-polish follow-up adds focused tests in `tests/test_app_launch.py` for distinct browser/app entry, app-context email login/logout, CSRF rejection, verification-gated signup, reset/verification forms, mocked canonical Google OAuth/PKCE return, invalid-state rejection, and fixed redirect targets. Worker tests cover online/offline `/app` navigation while asserting that only the four public resources are cached. Initial welcome browser checks passed at 390×844, 800×1280 portrait-tablet, and 1280×800 landscape sizes, including local email progression, no horizontal overflow, and no page errors. The full-suite and APK totals are in the current mobile-release section above; final browser/deployment results are recorded with this release. The table below records the preceding completed PWA/DAL releases.
+
 | Check | Result |
 | --- | --- |
-| Final full Python suite | **123/123 passed** in the Android DAL follow-up on 28 November, including 4 readiness tests, 6 PWA tests, and both corrected baseline tests |
+| Preceding DAL Python suite | **123/123 passed** in the Android DAL follow-up on 28 November, including 4 readiness tests, 6 PWA tests, and both corrected baseline tests |
 | Original failure reproduction | Both previously failing tests fail on an isolated clean archive of original commit `9c0736f`, and before test corrections in the PWA working tree; neither was a PWA regression |
 | Flask PWA tests | 6 passed: manifest/icon dimensions, MIME/cache/scope/CSP headers, metadata/session preservation, public resources without DB/cookies, exact test DAL identity, override/revocation validation, and package isolation |
 | Existing Node tests | 6 passed |
@@ -150,7 +177,7 @@ with tempfile.TemporaryDirectory() as directory:
 
 Physical Android/iOS installation, native standalone windows/splashes, complete real provider handoffs, and on-device APK behavior remain manual. No real mobile device was connected for this task.
 
-## Android APK handoff
+## Initial Android APK and DAL handoff (historical)
 
 **A signed test APK was generated after successful deployment:** `android/build/ennoic-test-debug.apk`, 5,531,296 bytes. File SHA-256: `49daeef2d60af06928cb7496786f6482838865e8ae07a416fddb687482a7048a`. It remains an ignored local deliverable and is not committed to Git. See [android/README.md](../android/README.md) for exact tooling, validation, debug certificate fingerprint, reproduction commands, signing/keystore management, and release steps.
 

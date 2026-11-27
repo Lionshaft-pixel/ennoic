@@ -6,6 +6,17 @@
   let iosHelpExpanded = false;
   const displayMode = window.matchMedia("(display-mode: standalone)");
   const isInstalled = () => displayMode.matches || navigator.standalone === true;
+  // Upgrade older installations whose saved start URL is still '/'. New PWAs
+  // and the TWA use /app explicitly; ordinary browser visits keep their landing.
+  let legacyAndroidLaunch = false;
+  try {
+    const referrer = new URL(document.referrer);
+    legacyAndroidLaunch = referrer.protocol === "android-app:" && referrer.hostname === "com.ennoic.app";
+  } catch { /* Most browser visits have no referrer. */ }
+  if (window.location.pathname === "/" && (isInstalled() || legacyAndroidLaunch)) {
+    window.location.replace("/app" + window.location.search + window.location.hash);
+    return;
+  }
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
     || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 

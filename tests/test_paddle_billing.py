@@ -6,7 +6,7 @@ import tempfile
 import time
 import unittest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 import account_store
 import app as app_module
@@ -462,6 +462,43 @@ class PaddleBillingTests(unittest.TestCase):
                 paddle_billing.PaddleAPI().ensure_subscription_canceled(
                     subscription_id, expected_customer_id="ctm_paddle_test"
                 )
+
+    def test_cancellation_uses_provider_cancel_endpoint_and_preserves_effective_date(self):
+        subscription_id = "sub_transport_test"
+        effective_at = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+        for environment, host in (
+            ("sandbox", "https://sandbox-api.paddle.com"),
+            ("production", "https://api.paddle.com"),
+        ):
+            for status, effective_from in (
+                ("active", "next_billing_period"), ("past_due", "immediately")
+            ):
+                with self.subTest(environment=environment, status=status):
+                    current = {"id": subscription_id, "customer_id": "ctm_paddle_test",
+                               "status": status, "scheduled_change": None}
+                    confirmed = {**current, "status": "canceled", "canceled_at": effective_at}
+                    if status == "active":
+                        confirmed = {**current, "scheduled_change": {
+                            "action": "cancel", "effective_at": effective_at,
+                        }}
+                    with patch("paddle_billing.requests.request", side_effect=[
+                        self.paddle_api_response(current), self.paddle_api_response(confirmed),
+                    ]) as provider_request:
+                        result = paddle_billing.PaddleAPI(
+                            api_key="transport_test_key", env=environment,
+                        ).ensure_subscription_canceled(
+                            subscription_id, expected_customer_id="ctm_paddle_test",
+                        )
+
+                    self.assertTrue(result["confirmed"])
+                    headers = {"Authorization": "Bearer transport_test_key",
+                               "Content-Type": "application/json"}
+                    endpoint = f"{host}/subscriptions/{subscription_id}"
+                    self.assertEqual(provider_request.call_args_list, [
+                        call("GET", endpoint, headers=headers, json=None, timeout=15),
+                        call("POST", endpoint + "/cancel", headers=headers,
+                             json={"effective_from": effective_from}, timeout=15),
+                    ])
 
     def test_paddle_customer_mapping_mismatch_stops_before_cancel_request(self):
         subscription_id = "sub_wrong_customer"

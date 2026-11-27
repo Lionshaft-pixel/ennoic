@@ -6,12 +6,13 @@
   function isIndiaPricing(selectedCurrency, preview) {
     var data = preview && preview.data;
     var currency = data && data.currencyCode;
-    var address = data && data.details && data.details.address;
+    var address = data && data.address;
     var country = address && address.countryCode;
 
-    if (country && String(country).toUpperCase() === "IN") return true;
-    if (currency) return String(currency).toUpperCase() === "INR";
-    return String(selectedCurrency || "").toUpperCase() === "INR";
+    // Paddle only offers UPI for INR checkouts with an Indian address. Until a
+    // preview arrives, the selected INR region is a useful disclosure fallback.
+    if (country && String(country).toUpperCase() !== "IN") return false;
+    return String(currency || selectedCurrency || "").toUpperCase() === "INR";
   }
 
   return { isIndiaPricing: isIndiaPricing };

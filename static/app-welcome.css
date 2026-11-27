@@ -1,0 +1,50 @@
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+.app-welcome { margin: 0; min-width: 280px; min-height: 100svh; background: #040201; color: #fff7ee; font-family: "Plus Jakarta Sans", Inter, system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
+.welcome-universe { position: fixed; inset: 0; pointer-events: none; overflow: hidden; background: linear-gradient(180deg, #040201 0%, #0c0301 42%, #3a0f03 77%, #a8380a 100%); }
+/* The event horizon, colors, and shadows come from authentication-page.html. */
+.welcome-horizon { position: absolute; left: 50%; top: min(-76vw, -650px); width: max(132vw, 1100px); aspect-ratio: 1; border-radius: 50%; background: #030100; box-shadow: inset 0 -3px 5px #fff1c0, inset 0 -14px 28px #ffb02e, inset 0 -70px 130px rgba(255,96,0,.8), 0 14px 70px rgba(255,120,20,.65); transform: translateX(-50%); animation: horizon-drift 12s ease-in-out infinite; }
+.welcome-glow { position: absolute; inset: 45% 0 0; background: radial-gradient(ellipse at 50% 100%, rgba(255,160,50,.35), rgba(255,110,20,0) 70%); }
+.welcome-shell { position: relative; isolation: isolate; display: flex; flex-direction: column; align-items: center; justify-content: center; width: min(100%, 540px); min-height: 100svh; margin: 0 auto; padding: max(42px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left)); }
+.welcome-brand { display: block; width: 154px; margin-bottom: clamp(34px, 7svh, 62px); line-height: 0; }
+/* Preserve the supplied wordmark's pixels and proportions on the dark welcome. */
+.welcome-brand img { width: 100%; height: auto; filter: invert(1); mix-blend-mode: screen; }
+.welcome-card { width: 100%; padding: 0 14px; }
+.welcome-card h1 { margin: 0; font-size: clamp(27px, 5vw, 34px); line-height: 1.18; letter-spacing: -.045em; font-weight: 600; text-align: center; text-wrap: balance; }
+.welcome-description { margin: 14px 0 32px; color: #d6c4b9; font-size: 14px; line-height: 1.65; text-align: center; text-wrap: balance; }
+.welcome-google, .welcome-primary { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 54px; padding: 13px 20px; border: 1px solid transparent; border-radius: 15px; line-height: 1.4; text-decoration: none; cursor: pointer; touch-action: manipulation; }
+.welcome-google { background: #fff; color: #202124; font-family: inherit; font-weight: 600; font-size: 14px; transition: background .15s; }
+.welcome-google:hover { background: #f0eeeb; }
+.welcome-google svg { flex: 0 0 20px; }
+.welcome-divider { display: flex; align-items: center; gap: 16px; margin: 24px 0; color: #bba99d; font-size: 12px; }
+.welcome-divider::before, .welcome-divider::after { flex: 1; content: ""; height: 1px; background: #ffffff24; }
+.welcome-form { display: flex; flex-direction: column; gap: 10px; }
+.welcome-form label { font-size: 12px; font-weight: 600; color: #e8d9cd; }
+.welcome-form input:not([type=hidden]) { display: block; width: 100%; min-width: 0; min-height: 52px; padding: 13px 15px; border: 1px solid #d7b28b50; border-radius: 13px; background: #100805c9; color: #fff; line-height: 1.5; font-family: inherit; font-size: 16px; }
+.welcome-form input::placeholder { color: #b6a396; opacity: 1; }
+.welcome-password { display: flex; flex-direction: column; gap: 10px; margin-top: 5px; }
+.welcome-password[hidden] { display: none; }
+.welcome-password-field { position: relative; }
+.welcome-password-field input { padding-right: 74px !important; }
+.welcome-password-field button { position: absolute; top: 5px; right: 5px; min-height: 42px; min-width: 60px; padding: 8px; border: 0; border-radius: 8px; background: transparent; color: #ffd0a2; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; }
+.welcome-email-note { margin: 0 0 3px; color: #c6b2a1; font-size: 12px; line-height: 1.6; }
+.welcome-primary { margin-top: 8px; background: #ff9a3d; color: #210e03; font-family: inherit; font-size: 14px; font-weight: 700; transition: background .15s; }
+.welcome-primary:hover { background: #ffaf65; }
+.welcome-primary:disabled { cursor: wait; opacity: .75; }
+.welcome-help { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 18px; font-size: 12px; }
+.welcome-help a, .welcome-back { color: #e9c4a6; text-underline-offset: 4px; }
+.welcome-help a { padding-block: 4px; }
+.welcome-signup { margin: 28px 0 0; color: #cbb8a9; text-align: center; font-size: 13px; line-height: 1.7; }
+.welcome-signup a { color: #fff7ee; font-weight: 600; text-underline-offset: 4px; }
+.welcome-back { display: inline-block; margin-top: 24px; font-size: 13px; }
+.welcome-footer { width: 100%; margin-top: 40px; text-align: center; color: #c8b7aa; font-size: 11px; line-height: 1.7; }
+.welcome-footer p { margin: 0; }
+.welcome-footer a { color: inherit; text-underline-offset: 3px; }
+.welcome-footer .welcome-security { margin-top: 9px; font-size: 10px; }
+.welcome-message { margin: 0 0 20px; padding: 13px 15px; border: 1px solid #ffce9a50; border-radius: 12px; background: #ffce9a12; color: #fff3e8; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.welcome-error { border-color: #ff807680; background: #64161273; }
+.app-welcome :focus-visible { outline: 3px solid #ffb86d; outline-offset: 4px; }
+@keyframes horizon-drift { 0%, 100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(-8px); } }
+@media (min-width: 700px) { .welcome-shell { width: 520px; } .welcome-horizon { top: -1160px; width: 1900px; } .welcome-card { padding: 30px; border: 1px solid #ffbe782e; border-radius: 28px; background: #1808034d; backdrop-filter: blur(12px); } .welcome-brand { width: 170px; margin-bottom: 38px; } }
+@media (max-width: 359px) { .welcome-shell { padding-inline: 20px; } .welcome-card { padding-inline: 0; } }
+@media (prefers-reduced-motion: reduce) { .welcome-horizon { animation: none; } .welcome-google, .welcome-primary { transition: none; } }

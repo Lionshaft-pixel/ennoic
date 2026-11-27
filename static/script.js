@@ -203,7 +203,11 @@ function setMobileView(view) {
 els.mobileChat.addEventListener("click", () => setMobileView("chat"));
 els.mobileTasks.addEventListener("click", () => setMobileView("tasks"));
 mobile.addEventListener("change", () => setMobileView(els.app.dataset.mobileView || "chat"));
-els.mobileSettings.addEventListener("click", () => window.location.assign("/settings"));
+function openSettings(event) {
+  window.EnnoicNavigation?.start(event.currentTarget);
+  window.location.assign("/settings");
+}
+els.mobileSettings.addEventListener("click", openSettings);
 
 function setTaskPanelOpen(open, persist = true) {
   els.app.dataset.taskPanel = open ? "open" : "closed";
@@ -1223,7 +1227,7 @@ function startNewChat() {
 }
 els.newChat.addEventListener("click", startNewChat);
 els.search.addEventListener("input", renderHistory);
-els.openSettings.addEventListener("click", () => window.location.assign("/settings"));
+els.openSettings.addEventListener("click", openSettings);
 const subscriptionView = EnnoicSubscriptionUI.createSubscriptionView({
   upgrade: els.upgrade,
   loading: $("app-entitlements-loading"),
