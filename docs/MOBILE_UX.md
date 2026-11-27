@@ -4,6 +4,8 @@ This release preserves the desktop marketing page, Flask backend, account verifi
 
 Code commit `23d436880f519d46ff3d40f0a756bb63684eb735` is deployed from `vibecoded`. Health/readiness, new welcome/manifest/assets, anonymous-access boundaries, canonical Google initiation and the unchanged Digital Asset Links association passed live HTTP checks; Google returned `linked: true`. Full local validation passed 133 Python tests, 19 Node tests and the complete browser regression without page errors. The verified update APK is `android/build/ennoic-test-debug.apk`, version `0.2.0-test`/code `2`, with the original package/certificate.
 
+Follow-up `2acfbb4ed1b5f68d39906df938fda4a736e5aee3` fixes the existing Paddle stylesheet CSP block and is also deployed. The final live browser run passed installability, root worker control, welcome/pricing across phone/tablet/desktop sizes, cache privacy and offline/retry recovery with no page errors or CSP violations. Health/readiness and `linked: true` were rechecked successfully.
+
 ## Delivered behavior
 
 - Installed PWA and updated Android launches use `/app`. Guests see the existing black-hole/event-horizon artwork, original wordmark, Google sign-in, direct email entry and signup/help links. Authenticated users see the existing dashboard. Browser `/` remains the marketing page. A signed, privilege-free session preference keeps authentication/logout returns in the app flow; Chrome/TWA cookie sharing can also apply this presentation to a browser login tab.
@@ -30,6 +32,8 @@ The reported 3–4 second delay was not reproduced as a single JavaScript stall.
 
 The complete local browser regression passed with no page errors. Navigation feedback appeared in 4.9 ms while the destination response was held. One local dashboard sample had 33 ms TTFB but 2.5 s DOMContentLoaded, demonstrating that external styles/scripts and device/rendering conditions can still dominate after a fast server response. These samples are diagnostic, not a production speed guarantee.
 
+After deployment, the read-only production browser measured `/app` TTFB 431 ms, DOMContentLoaded 1165 ms and first contentful paint 924 ms. Two pricing samples measured TTFB 337/366 ms, DOMContentLoaded 1268/1121 ms and first contentful paint 900/828 ms. Different runs have different network/cache conditions; these are observed release timings rather than a controlled before/after benchmark.
+
 ## Provider findings
 
 Google's account chooser branding requires Google Auth Platform configuration and verification/publication. The application cannot hide legitimate hosted-domain security information. An owned custom domain may help domain verification but requires a coordinated origin, OAuth, Paddle and Android/DAL migration.
@@ -52,6 +56,8 @@ On the Realme Pad X, install this APK as an update, then check:
 6. Offline/reconnect: only the generic fallback, then retry into the authenticated app; no offline private cache or replay. Test provider handoffs in a suitable sandbox, without a live charge for routine QA.
 
 No device or emulator is connected here. Native Android launch, physical Safari, real Google/Paddle/Paytm handoffs and the tablet's actual network responsiveness remain manual checks.
+
+Production browser network emulation rendered the cached offline page and successfully retried after restoration, but kept `navigator.onLine` true while offline, so its cosmetic online-status event was not reliable. That event passed locally; confirm the reconnect message using airplane mode on the device. No private data was cached or replayed in either run.
 
 ## File inventory for this release
 
