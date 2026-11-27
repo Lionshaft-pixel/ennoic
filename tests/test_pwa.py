@@ -79,15 +79,47 @@ class PwaTests(unittest.TestCase):
         self.assertIn("no-store", home.headers["Cache-Control"])
         self.assertIn(b'rel="manifest"', home.data)
 
-    def test_assetlinks_only_publishes_valid_explicit_certificates(self):
+    def test_assetlinks_defaults_to_the_verified_test_apk_identity(self):
+        with patch.dict(os.environ):
+            os.environ.pop("ENNOIC_ANDROID_SHA256_FINGERPRINTS", None)
+            os.environ.pop("ENNOIC_ANDROID_PACKAGE_ID", None)
+            with patch("app.account_store.initialize", side_effect=AssertionError("Database must not be used")):
+                response = self.client.get("/.well-known/assetlinks.json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "application/json")
+        self.assertNotIn("Set-Cookie", response.headers)
+        self.assertIn("must-revalidate", response.headers["Cache-Control"])
+        self.assertEqual(response.get_json(), [{
+            "relation": ["delegate_permission/common.handle_all_urls"],
+            "target": {
+                "namespace": "android_app",
+                "package_name": "com.ennoic.app",
+                "sha256_cert_fingerprints": [
+                    "60:F5:54:7E:71:0B:4A:3C:D0:6C:0F:8D:CB:8F:EB:80:"
+                    "17:6C:65:D7:7E:D8:21:C1:9A:4B:0E:75:72:2A:78:98",
+                ],
+            },
+        }])
+
+    def test_assetlinks_does_not_reuse_test_certificate_for_another_package(self):
+        with patch.dict(os.environ, {"ENNOIC_ANDROID_PACKAGE_ID": "com.example.other"}):
+            os.environ.pop("ENNOIC_ANDROID_SHA256_FINGERPRINTS", None)
+            self.assertEqual(self.client.get("/.well-known/assetlinks.json").get_json(), [])
+
+    def test_assetlinks_explicit_override_replaces_or_revokes_default_trust(self):
+        # setUp's explicit empty setting must revoke the checked-in association.
         self.assertEqual(self.client.get("/.well-known/assetlinks.json").get_json(), [])
         fingerprint = ":".join(["AB"] * 32)
-        with patch.dict(os.environ, {"ENNOIC_ANDROID_SHA256_FINGERPRINTS": fingerprint.lower()}):
+        second_fingerprint = ":".join(["CD"] * 32)
+        with patch.dict(os.environ, {
+            "ENNOIC_ANDROID_SHA256_FINGERPRINTS": f"{fingerprint.lower()}, {fingerprint}, {second_fingerprint}",
+            "ENNOIC_ANDROID_PACKAGE_ID": "com.example.release",
+        }):
             response = self.client.get("/.well-known/assetlinks.json")
         self.assertEqual(response.mimetype, "application/json")
         target = response.get_json()[0]["target"]
-        self.assertEqual(target["package_name"], "com.ennoic.app")
-        self.assertEqual(target["sha256_cert_fingerprints"], [fingerprint])
+        self.assertEqual(target["package_name"], "com.example.release")
+        self.assertEqual(target["sha256_cert_fingerprints"], [fingerprint, second_fingerprint])
         for values in [{"ENNOIC_ANDROID_SHA256_FINGERPRINTS": "placeholder"}, {
             "ENNOIC_ANDROID_SHA256_FINGERPRINTS": fingerprint,
             "ENNOIC_ANDROID_PACKAGE_ID": "invalid/package",

@@ -43,9 +43,9 @@ All Python/browser runs used temporary SQLite data, suppressed loading `.env`, a
 
 | Check | Result |
 | --- | --- |
-| Final full Python suite | **121/121 passed** on 28 November (184.266 seconds), including 4 readiness tests, 4 PWA tests, and both corrected baseline tests |
+| Final full Python suite | **123/123 passed** in the Android DAL follow-up on 28 November, including 4 readiness tests, 6 PWA tests, and both corrected baseline tests |
 | Original failure reproduction | Both previously failing tests fail on an isolated clean archive of original commit `9c0736f`, and before test corrections in the PWA working tree; neither was a PWA regression |
-| New Flask PWA tests | 4 passed: manifest/icon dimensions, MIME/cache/scope/CSP headers, metadata/session preservation, public resources without DB/cookies, DAL validation |
+| Flask PWA tests | 6 passed: manifest/icon dimensions, MIME/cache/scope/CSP headers, metadata/session preservation, public resources without DB/cookies, exact test DAL identity, override/revocation validation, and package isolation |
 | Existing Node tests | 6 passed |
 | New worker Node tests | 5 passed: exact credential-free precache, auth/API/payment bypass, fresh navigation/offline recovery, cache cleanup, storage-eviction fallback |
 | Chromium installability | DevTools `Page.getInstallabilityErrors` returned no errors in a normal persistent Edge/Chromium profile |
@@ -73,7 +73,7 @@ Existing tests still cover CSRF rejection, rate limiting, Google OAuth's canonic
 
 ## Release verification
 
-The 28 November release audit passed **121 Python tests and 11 Node tests**, including four focused database-readiness tests. Browser regression checks also passed with no page errors, including worker updates, offline/network recovery, login/logout, tasks, mocked chat/history, and session reopening. An independent source review found no release-blocking readiness or PWA privacy/auth/cache issue. Render continues to use the existing `vibecoded` branch and Gunicorn/Python build. Runtime dependencies, database schemas, pricing, entitlements, AI prompts, and existing account/payment logic are unchanged. No signing material, real environment files, local data, or generated builds are included in Git.
+The 28 November release audit passed 121 Python tests and 11 Node tests; the subsequent Android DAL follow-up passed **123 Python tests and all 11 Node tests**. Browser regression checks from the release also passed with no page errors, including worker updates, offline/network recovery, login/logout, tasks, mocked chat/history, and session reopening. Independent source reviews found no release-blocking readiness, PWA privacy/auth/cache, or DAL override issue. Render continues to use the existing `vibecoded` branch and Gunicorn/Python build. Runtime dependencies, database schemas, pricing, entitlements, AI prompts, and existing account/payment logic are unchanged. No signing material, real environment files, local data, or generated builds are included in Git.
 
 ### Readiness diagnosis and fix
 
@@ -96,7 +96,7 @@ On **28 November 2026**, a normal fast-forward push delivered PWA commit `b0a419
 | `/manifest.webmanifest` | 200, `application/manifest+json`; JSON matches the committed manifest |
 | `/service-worker.js` | 200, JavaScript MIME, root scope and revalidation headers; source matches the committed worker |
 | Five ordinary/maskable/Apple icons | 200, correct PNG dimensions; bytes match the local assets |
-| `/offline`, `/.well-known/assetlinks.json` | 200; DAL intentionally returns `[]` until a signing identity is configured |
+| `/offline`, `/.well-known/assetlinks.json` | 200; initial DAL response was `[]`; the Android testing follow-up configures the verified test certificate as described below |
 | `/`, `/login`, `/pricing` | 200; landing and existing sign-in form render without browser errors |
 | `/api/tasks`, `/api/auth/me`, `/settings` without login | Expected 401, anonymous 200, and login redirect respectively |
 | Google OAuth initiation | 302 to `accounts.google.com`, with the existing `https://ennoic.onrender.com/auth/google/callback`; provider flow not completed |
@@ -158,7 +158,9 @@ Bubblewrap CLI/core 1.28.0 generated the project from the live manifest through 
 
 `apksigner` verified the actual APK (Signature Scheme v2), and `aapt` confirmed `com.ennoic.app`, Ennoic, version `0.1.0-test`/code `1`, minimum API 24, target/compile SDK 36, the production launch URL, and no `POST_NOTIFICATIONS` permission. Generated launcher/splash artwork retains the full existing wordmark. Gradle uses the standard external `~/.android/debug.keystore`; no release key was created, and signing credentials were not collected or committed. No device was connected, so installation, native splash/window appearance, and full on-device functionality remain manual.
 
-The provisional Android ID is `com.ennoic.app`. `/.well-known/assetlinks.json` is live and returns an empty array until valid public certificate fingerprints are configured. `.env.example` documents `ENNOIC_ANDROID_PACKAGE_ID` and `ENNOIC_ANDROID_SHA256_FINGERPRINTS`. Digital Asset Links is unnecessary for ordinary PWA installation; it is needed for verified TWA behavior. The test certificate was not automatically trusted in production: expect a Custom Tab/browser toolbar until intentional verification is configured. Finalize the app ID and release signing identity before distribution, then configure the matching public certificate fingerprint. Google Play is optional.
+The provisional Android ID is `com.ennoic.app`. The Android testing follow-up explicitly authorizes `/.well-known/assetlinks.json` to associate the existing APK's verified public certificate, `60:F5:54:7E:71:0B:4A:3C:D0:6C:0F:8D:CB:8F:EB:80:17:6C:65:D7:7E:D8:21:C1:9A:4B:0E:75:72:2A:78:98`. `pwa.py` now supplies this package-bound checked-in default; existing environment values can replace it, and an explicit empty or invalid fingerprint override publishes `[]` rather than restoring default trust. A different package must provide its own fingerprint. No Render secret changes or APK rebuild are needed. Additional tests cover the exact default, public/no-DB response, package isolation, replacement, multiple certificates/deduplication, revocation, and invalid configuration.
+
+Digital Asset Links is unnecessary for ordinary PWA installation; it is needed for verified TWA behavior. The existing APK has been reverified with `apksigner`/`aapt`; its signature and file hash are unchanged. After deployment, a supported Android browser should launch this APK without browser controls on the Ennoic origin. Physical-device verification remains manual; external Google/payment pages may show browser controls. The [Android guide](../android/README.md#install-and-launch-on-your-phone) contains exact installation instructions, troubleshooting, and a mobile test checklist. Finalize the app ID and replace/remove the debug trust when setting up release signing. Google Play is optional.
 
 ## Exact file changes
 

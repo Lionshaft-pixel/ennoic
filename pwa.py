@@ -8,6 +8,14 @@ from flask import Blueprint, current_app, jsonify, send_from_directory
 
 pwa = Blueprint("pwa", __name__)
 
+# Public identity of the existing, explicitly authorized Android test APK.
+# Replace/remove this test association when finalizing release signing.
+TEST_ANDROID_PACKAGE_ID = "com.ennoic.app"
+TEST_ANDROID_SHA256_FINGERPRINT = (
+    "60:F5:54:7E:71:0B:4A:3C:D0:6C:0F:8D:CB:8F:EB:80:"
+    "17:6C:65:D7:7E:D8:21:C1:9A:4B:0E:75:72:2A:78:98"
+)
+
 
 def _public_file(filename, mimetype):
     response = send_from_directory(current_app.static_folder, filename, mimetype=mimetype, max_age=0)
@@ -35,9 +43,12 @@ def offline():
 @pwa.get("/.well-known/assetlinks.json")
 def assetlinks():
     # Certificate fingerprints are public. Private keys/passwords never belong here.
-    package = os.environ.get("ENNOIC_ANDROID_PACKAGE_ID", "com.ennoic.app").strip()
+    package = os.environ.get("ENNOIC_ANDROID_PACKAGE_ID", TEST_ANDROID_PACKAGE_ID).strip()
+    # An explicit empty override revokes trust. A different package must supply
+    # its own certificate rather than inheriting the Ennoic test certificate.
+    default_fingerprint = TEST_ANDROID_SHA256_FINGERPRINT if package == TEST_ANDROID_PACKAGE_ID else ""
     fingerprints = [value.strip().upper() for value in os.environ.get(
-        "ENNOIC_ANDROID_SHA256_FINGERPRINTS", ""
+        "ENNOIC_ANDROID_SHA256_FINGERPRINTS", default_fingerprint
     ).split(",") if value.strip()]
     valid_package = re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+", package)
     valid_fingerprints = all(re.fullmatch(r"(?:[0-9A-F]{2}:){31}[0-9A-F]{2}", value) for value in fingerprints)

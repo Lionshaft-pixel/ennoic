@@ -6,7 +6,7 @@ This directory is independent of Flask, Python dependencies, Render's build, and
 
 **The PWA is deployed and healthy.** PWA commit `b0a419b762ca63638a3fefaa3bf05b6b926b2c3c` and pooled-readiness fix `228da55c4d229ffa21bb0dd602bdd364cb1c7e32` were pushed normally to `vibecoded`, triggering Render. Production `/healthz` and `/readyz` now return 200 repeatedly. Manifest, worker, all five icons, offline fallback, root worker control, Chromium installability, cache privacy, network recovery, and iOS installation instructions passed live checks. See [the PWA report](../docs/PWA.md#deployment-results).
 
-**A signed test APK was generated and verified:** `android/build/ennoic-test-debug.apk` (relative to the repository root). Bubblewrap **1.28.0** generated the project from the live production manifest; Gradle `assembleDebug` completed successfully in 3m44s after correcting the upstream minimum-SDK mismatch below. No release signing identity or production Digital Asset Links trust has been configured.
+**A signed test APK was generated and verified:** `android/build/ennoic-test-debug.apk` (relative to the repository root). Bubblewrap **1.28.0** generated the project from the live production manifest; Gradle `assembleDebug` completed successfully in 3m44s after correcting the upstream minimum-SDK mismatch below. The Android testing follow-up explicitly configures its public debug certificate as the website's default Digital Asset Links association. This is a test identity; no release signing identity has been configured.
 
 Available tooling: Node 24.6.0, npm 11.5.2, existing Android SDK platform 36 and build tools 36.0.0/36.1.0. A portable **Temurin JDK 17.0.21.1+2** was downloaded from Adoptium's official release, SHA-256 verified, and extracted to `%LOCALAPPDATA%\EnnoicAndroidToolchain\jdk-17.0.21.1+2`. Archive SHA-256: `eafba0944f777abdc74d5aad16049c9b5a1275b6ce99e2939ba9f7f3e6f08c87`. Gradle 8.11.1 automatically installed required SDK Build-Tools **35.0.0** using the existing accepted SDK license. The system Java 8 installation and machine environment were not changed. Android SDK command-line tools were absent; the successful debug workflow used the SDK directly.
 
@@ -34,7 +34,37 @@ Public **debug certificate** SHA-256 fingerprint (different from the APK file ha
 60:F5:54:7E:71:0B:4A:3C:D0:6C:0F:8D:CB:8F:EB:80:17:6C:65:D7:7E:D8:21:C1:9A:4B:0E:75:72:2A:78:98
 ```
 
-This certificate has not been added to production DAL. The test APK is signed and structurally verified, but native installation, splash, complete OAuth/payment handoffs, tasks/chat, close/reopen, and toolbar-free TWA behavior still require a real device/account. A debug APK cannot update an APK signed with a different certificate; uninstall the test wrapper when moving to an incompatible release signing identity.
+The website's checked-in DAL default now associates this exact certificate with `com.ennoic.app`. The existing APK was reverified directly with `apksigner`, its package was checked with `aapt`, and its file hash is unchanged; no APK rebuild is needed for this server-side change. Native installation, splash, complete OAuth/payment handoffs, tasks/chat, close/reopen, and toolbar-free TWA behavior still require a real device/account. A debug APK cannot update an APK signed with a different certificate; uninstall the test wrapper when moving to an incompatible release signing identity.
+
+The DAL follow-up passed **123 Python tests and 11 Node tests**, including exact certificate/default response, public headers/no database access, package isolation, valid replacement, multiple-certificate normalization/deduplication, empty revocation, and invalid configuration. UI, account/task/AI behavior, and the APK binary are unchanged.
+
+## Install and launch on your phone
+
+1. Use Android 7.0/API 24 or later with an up-to-date TWA-capable browser, preferably Chrome. Connect to the internet for website loading and association verification.
+2. Copy `android/build/ennoic-test-debug.apk` from this repository to the phone's Downloads folder, for example using a USB file-transfer connection.
+3. Open the APK in the phone's Files app. If Android asks, allow that specific file manager to install unknown apps, then choose Install. The app appears as **Ennoic** in the app drawer. USB debugging is unnecessary for this method.
+4. Alternatively, enable Developer options > USB debugging, connect by USB, approve the computer on the phone, then run from the repository root:
+
+   ```powershell
+   adb devices
+   adb install -r ".\android\build\ennoic-test-debug.apk"
+   ```
+
+5. Launch **Ennoic from its Android app icon**. Opening the website in an ordinary browser tab does not test APK/TWA verification. If an older wrapper uses an incompatible signing certificate, uninstall that wrapper before installing this one.
+
+Expect the existing Ennoic branding/splash and website interface. On a supported browser with successful verification, Ennoic pages should have **no address bar, browser overflow menu, or Custom Tab close button**. Android's system status/navigation bars may remain: their presence does not mean verification failed. Google sign-in and other external domains can legitimately show browser controls; returning to the Ennoic origin should restore the verified app view.
+
+If the Ennoic origin still shows browser controls, first check the live DAL endpoint against the package/fingerprint above, update Chrome, ensure the phone is online, close/force-stop Ennoic and relaunch. A previously failed association can be cached; allow time and retry. Do not clear browser data or bypass verification. On Android 12+, `adb shell pm verify-app-links --re-verify com.ennoic.app` and `adb shell pm get-app-links com.ennoic.app` help diagnose OS App Links, but only launching the app confirms toolbar-free TWA behavior. To identify the chosen browser while launching, use `adb logcat -v brief | Select-String TWAProviderPicker` in PowerShell. Check the actual selected browser if another default browser is installed.
+
+## Short mobile checklist
+
+- Launch from the APK icon and check branding, readable icons, and absence of browser controls on Ennoic pages.
+- Log in; create a disposable task, edit/complete it, and confirm it remains saved after refreshing/reopening.
+- Send one normal authorized AI chat request and verify the reply/history.
+- Close/remove Ennoic from Recents, reopen from its icon, and check the expected session, tasks, and conversation history.
+- Test Google sign-in, complete consent if needed, and confirm return to Ennoic without a redirect loop or persistent browser toolbar.
+- Navigate between tasks, chat, settings, and back using Android Back; check keyboard/scrolling and external-link return.
+- Test logout/login, offline fallback, and recovery when the connection returns. Complete provider/billing handoffs only in an appropriate test flow.
 
 ## Identity and configuration
 
@@ -77,7 +107,7 @@ adb devices
 adb install -r $apk
 ```
 
-Use the actual installed build-tools version if it differs. `npm run install-apk` below belongs to the CLI release workflow and expects a different output filename. Debug signing is for local testing, not production identity or distribution continuity. Without a matching certificate in production DAL, the APK should fall back to a Custom Tab with a browser toolbar. Ordinary PWA installation is already independent of Android verification.
+Use the actual installed build-tools version if it differs. `npm run install-apk` below belongs to the CLI release workflow and expects a different output filename. Debug signing is for local testing, not production identity or distribution continuity. This exact test certificate is now the checked-in DAL default; rebuilding on another machine may use a different local debug key and will require an intentional certificate update. Ordinary PWA installation is independent of Android verification.
 
 ## Release build workflow
 
@@ -111,7 +141,14 @@ All generated project/build files and signing artifacts are ignored. `npm instal
 
 ## Digital Asset Links
 
-Flask now serves `GET /.well-known/assetlinks.json` without login, cookies, redirects, or database access. Until configured, it returns `[]`, which intentionally grants no Android app trust.
+Flask serves `GET /.well-known/assetlinks.json` without login, cookies, redirects, or database access, with JSON MIME type and revalidation headers. `pwa.py` contains the explicitly authorized **public** test package/certificate defaults above; no private key or password is checked in. The statement grants `delegate_permission/common.handle_all_urls` to the `android_app` target `com.ennoic.app` and its verified certificate fingerprint.
+
+Environment overrides remain available:
+
+- If `ENNOIC_ANDROID_SHA256_FINGERPRINTS` is absent, the exact checked-in test certificate is used for `com.ennoic.app`.
+- An explicitly empty value publishes `[]`, revoking trust. Invalid values also fail closed; they never restore the test default.
+- Nonempty valid values **replace** the test default, allowing a release certificate or an intentional comma-separated certificate list. A different package name receives no default certificate and must supply its own fingerprint.
+- When releasing, replace/remove the checked-in debug association and configure the final signing identity. Keep its keystore outside Git and backed up securely.
 
 Extract the **public SHA-256 certificate fingerprint** from the actual signing key:
 
@@ -128,7 +165,7 @@ ENNOIC_ANDROID_SHA256_FINGERPRINTS=<32 colon-separated SHA-256 hex bytes>
 
 The fingerprint is public metadata, not the keystore password. Multiple intentionally trusted certificates may be supplied as comma-separated fingerprints. Invalid configuration grants no trust and logs a generic error. The endpoint generates the required `delegate_permission/common.handle_all_urls` statement with `namespace: android_app`, the configured package name, and fingerprints. Do not publish placeholder values.
 
-Fetch `https://ennoic.onrender.com/.well-known/assetlinks.json` and confirm HTTP 200, `application/json`, no redirect, and an exact package/certificate match. The generated Android manifest must also associate the same origin (Bubblewrap generates this side). Reinstall/relaunch and inspect TWA verification on a real device. Android App Links diagnostics include `adb shell pm verify-app-links --re-verify com.ennoic.app` and `adb shell pm get-app-links com.ennoic.app`; also inspect browser TWA logs because OS link verification alone does not prove a toolbar-free TWA launch.
+Fetch `https://ennoic.onrender.com/.well-known/assetlinks.json` and confirm HTTP 200, `application/json`, no redirect, and an exact package/certificate match. The generated Android manifest already associates this same origin. Relaunch and inspect TWA verification on a real device; use the troubleshooting steps above if browser controls remain.
 
 ## Release signing and updates
 
