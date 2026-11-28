@@ -61,6 +61,14 @@ Evidence remains under ignored `instance/pwa-qa/` (`python-v022-final.json`, `re
 
 No authentication redirect, account logic, task/AI logic, database schema, subscription pricing, prompts, brand assets or offline cache contents changed.
 
+## Production deployment
+
+Code commit **`808b052321220a07ce8b871d680745128129c8c9`** was pushed normally to `vibecoded` and deployed by Render on 28 November 2026. The third verification poll observed the exact new Back controller and shared head after an initial connection error and an old-version response. `/healthz` and `/readyz` each returned 200 three times. The new/updated static resources, manifest and root-scoped service worker matched the release sources. Guest welcome remained `no-store`, browser `/` remained marketing, anonymous tasks remained 401 and settings redirected to login. Google authorization initiation retained the canonical callback and S256 PKCE.
+
+The production Digital Asset Links endpoint returned 200 JSON with the unchanged package/certificate and both URL-handling and native-message relations. It set no cookie and did not redirect. Google's verification API returned **`linked: true` for both `common.handle_all_urls` and `common.use_as_origin`**. Evidence: ignored `instance/pwa-qa/production-v022-verification.json`. Production verification created no accounts, tasks, conversations, emails or payment actions.
+
+The Back feature requires the updated APK, a live verified native connection and a CloseWatcher-capable browser (Chrome 126 or newer). Older wrappers, standalone PWAs and unsupported/disconnected providers retain normal browser Back. No physical Android runtime test was performed here; the native toast/task-exit behavior and real Google identity handoff remain for owner verification using the checklist below.
+
 ## Physical Realme checklist
 
 1. Install `android/build/ennoic-test-debug.apk` over the existing app, open from its icon online, and confirm the existing splash/session/layout.

@@ -12,6 +12,8 @@ The verified debug APK is **5,553,647 bytes**, SHA-256 `74e16e6a4409cc9880227225
 
 All 135 Python tests, the complete existing browser regression and the focused Back browser suite passed. The focused suite uses real CloseWatcher events and a modeled native port; actual Android toast/task-exit and real Google handoffs require the runtime/device checks in the release report.
 
+Web/packaging commit `808b052321220a07ce8b871d680745128129c8c9` is deployed on Render. Repeated health/readiness 200 and exact web assets/manifest/worker passed; production DAL and Google's checks verify **both** `common.handle_all_urls` and `common.use_as_origin` as `linked: true` for the unchanged certificate. Use a current TWA-capable Chrome with CloseWatcher (Chrome 126+); unsupported/stale connections keep normal browser Back.
+
 `java/com/ennoic/app/LauncherActivity.java` uses supported AndroidX Custom Tabs APIs rather than overriding a Back method on the inactive Bubblewrap launcher. It preserves Browser Helper's provider selection, splash, delegation and Custom Tabs fallback. The target-origin MessagePort requires Digital Asset Links `common.use_as_origin`; only finite, nonce-bound commands are accepted. Native task closure checks the captured task ID and Ennoic base component. No WebView, Google-origin trust, cookie access, history sentinel or automatic TWA relaunch is added. Unsupported/stale bridges fail open to normal browser Back.
 
 ## v0.2.1 is a web update

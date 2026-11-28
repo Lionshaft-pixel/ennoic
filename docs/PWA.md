@@ -4,6 +4,8 @@
 
 The Android update uses a verified native messaging bridge and CloseWatcher to close app panels/dialogs before navigating or requesting root exit. The native wrapper owns the **Press back again to exit** toast and two-second timer. A new **0.2.2-test / code 3 APK is required**; ordinary browser and unbridged PWA Back behavior remains unchanged. Authentication redirects, Google state/nonce/PKCE and sign-out security are retained. Digital Asset Links adds `common.use_as_origin` for the same package/certificate. See [the v0.2.2 report](MOBILE_V022.md) for the design, test/build/deployment results and device checklist.
 
+Commit `808b052321220a07ce8b871d680745128129c8c9` is deployed. Full isolated suites passed **135 Python and 45 Node tests**, plus 10 native timer checks, complete browser regression and focused Back tests. Production health/readiness returned 200 repeatedly; new source assets/manifest/worker matched, and Google's association checks returned `linked: true` for both relations. The signed test APK was built with the unchanged package/certificate; physical Android runtime testing remains for the owner, as noted in the focused report's device checklist.
+
 ## v0.2.1 mobile web polish
 
 The v0.2.1 follow-up makes the composer more compact and follows keyboard/visual-viewport bounds, replaces native sign-out/account/task/conversation confirmations with accessible in-page modals, makes verification resend contextual, and contains vertical overscroll only in standalone windows. Authentication/deletion security, private-cache boundaries, native splash, package and certificate remain unchanged. See [the focused report](MOBILE_V021.md) for diagnosis, exact files, testing and physical-device checks.
