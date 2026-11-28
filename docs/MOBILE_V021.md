@@ -42,7 +42,17 @@ All authenticated QA uses disposable local SQLite accounts. AI, email and Google
 
 Every changed behavior is rendered by the existing production website. The service worker still caches only the same four generic offline resources; new application scripts/styles are not placed in Cache Storage. None of those four offline assets changed, so the offline cache version is unchanged. Navigate/reload or close and reopen the app to load the fresh web files; an already-open document is not forcibly reloaded and drafts are not discarded.
 
-The existing test APK remains `android/build/ennoic-test-debug.apk`, package `com.ennoic.app`, version `0.2.0-test`/code `2`, signed with the same certificate documented in [the Android guide](../android/README.md). Its binary and native splash are untouched. Release commits and live verification are recorded after deployment below.
+The existing test APK remains `android/build/ennoic-test-debug.apk`, package `com.ennoic.app`, version `0.2.0-test`/code `2`, signed with the same certificate documented in [the Android guide](../android/README.md). Its binary and native splash are untouched. Its file SHA-256 was rechecked: `e70278e284be52ff94e8ae698ef47fc861f93e58bfe5dc9aa160e59fb5149497`.
+
+## Production result
+
+Code commit **`e2e66d78a8576c5a298a7315706c6f719f1c31c8`** was pushed normally to `vibecoded`; Render deployed it successfully on 28 November 2026. The new release was observed on the second poll after one old-version response. `/healthz` and `/readyz` each returned 200 three times. Every updated JavaScript/CSS asset matched the release source; the manifest and root-scoped worker matched too. The welcome remained `no-store`, ordinary `/` retained marketing, anonymous tasks remained 401 and settings redirected to login. Google authorization initiation retained its canonical callback and S256 PKCE; no real provider login was completed here.
+
+Production Digital Asset Links returned 200 JSON with the unchanged `com.ennoic.app` certificate and no redirect or cookie. Google's association check again returned **`linked: true`**.
+
+Live persistent-Edge checks passed at 390×844, 800×1280, 1280×800 and 1440×1000, with no horizontal overflow. Read-only modal previews passed Cancel, Escape, Tab wrapping and focus restoration. At a 390×350 keyboard-sized viewport the focused email field was fully inside the scrolling policy area and the action row ended at 333px, above the viewport bottom. Initial welcome/email entry had no general Verify email link. Ordinary browser root overscroll was `auto`; simulated standalone root/body overscroll was `contain`. Installability reported no errors; the activated root worker controlled the page after its initial reload. Cache Storage held exactly the original four generic offline resources, and offline fallback/online retry worked. No JavaScript page errors, CSP violations or native dialogs occurred.
+
+Production checks were read-only: the modal preview did not invoke account actions or send credentials. Authenticated task/chat/deletion behavior was exercised locally with disposable accounts. Ignored evidence is in `instance/pwa-qa/production-v021-verification.json`, `production-v021-browser.json` and its keyboard screenshot. This report and the two guides are updated in a separate documentation commit after the verified application release.
 
 ## Physical Realme checks
 

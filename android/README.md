@@ -6,7 +6,9 @@ This directory is independent of Flask, Python dependencies, Render's build, and
 
 Composer keyboard bounds/compactness, accessible confirmation modals, contextual verification resend and installed-only pull-to-refresh suppression are delivered through the website. **No new APK or reinstall is required.** Open fresh pages or close/reopen the existing app online; an already-open document retains its current UI until navigation/reload. The installed package still reports `0.2.0-test`/code `2`; its binary, white native splash, package ID and signing certificate remain unchanged. See [the v0.2.1 report](../docs/MOBILE_V021.md) for tests, rollout and physical Realme keyboard/rotation/gesture checks.
 
-## Current mobile release - 28 November 2026
+Web commit `e2e66d78a8576c5a298a7315706c6f719f1c31c8` is deployed on Render. All **135 Python and 31 Node tests**, local browser regression and 36 composer bounds checks passed. Live phone/tablet/desktop checks passed confirmations, keyboard-sized modal bounds, initial authentication, installed scrolling policy, installability and offline retry without JavaScript/CSP errors. Health/readiness returned 200 repeatedly. Production DAL and Google's `linked: true` check still match the existing APK, whose unchanged SHA-256 was rechecked. Real Android keyboard/rotation/gesture behavior remains a physical-device check; no native build was necessary.
+
+## Previous native release - 28 November 2026 (v0.2.0)
 
 An updated signed test APK has been generated for the mobile/tablet polish release. The same package and certificate allow it to update the code-1 build already tested on the Realme Pad X. The native splash changes require this APK update; the welcome/layout/navigation changes are served by the website. See [the mobile report](../docs/MOBILE_UX.md), [PWA results](../docs/PWA.md), and [checkout/Google review](../docs/MOBILE_CHECKOUT_REVIEW.md).
 
@@ -25,7 +27,7 @@ An updated signed test APK has been generated for the mobile/tablet polish relea
 | Permissions / origins | Notifications disabled; no `POST_NOTIFICATIONS`; no additional trusted origins; Custom Tabs fallback |
 | Signing key | Existing external `~/.android/debug.keystore`; no new key, password collection, or release identity |
 | Previous artifact | Preserved locally as `android/build/ennoic-test-debug-v1.apk` |
-| Physical installation | Previous build tested by the owner on Realme Pad X; this update still requires on-device validation |
+| Physical installation | Owner confirmed this build's splash, welcome, authentication and tablet layout on Realme Pad X; v0.2.1 keyboard/rotation/gesture checks remain manual |
 
 Public **certificate** SHA-256 (different from the APK file hash):
 
