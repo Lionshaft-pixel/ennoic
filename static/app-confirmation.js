@@ -9,6 +9,7 @@
     if (activeDialog) return Promise.resolve(null);
 
     return new Promise((resolve) => {
+      const resumeAndroidBack = window.EnnoicAndroidBack?.suspendDialog();
       const previouslyFocused = document.activeElement;
       const dialog = document.createElement("dialog");
       dialog.id = "ennoic-confirmation";
@@ -94,6 +95,7 @@
         inertElements.forEach(([element, wasInert]) => { element.inert = wasInert; });
         if (!wasScrollLocked) document.documentElement.classList.remove("ennoic-confirmation-open");
         if (previouslyFocused?.isConnected) previouslyFocused.focus({ preventScroll: true });
+        resumeAndroidBack?.();
         resolve(value);
       };
 

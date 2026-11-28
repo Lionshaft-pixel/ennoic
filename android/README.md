@@ -2,6 +2,18 @@
 
 This directory is independent of Flask, Python dependencies, Render's build, and the PWA. It wraps `https://ennoic.onrender.com/` in a Trusted Web Activity (TWA), using the device's browser engine. Google Play is optional: a signed APK can be installed directly.
 
+## v0.2.2 Back navigation - APK update required
+
+The **0.2.2-test / code 3** wrapper adds verified, origin-targeted Custom Tabs messaging. Web CloseWatcher closes app dialogs/panels first; at the authenticated root it requests the native **Press back again to exit** toast. A second press within two seconds closes only Ennoic's task; waiting resets the confirmation. Explicit sign-out still returns to the unauthenticated welcome. Browser/PWA sessions without this native capability retain their normal Back behavior.
+
+Install the new `android/build/ennoic-test-debug.apk` as an update over v0.2.0; package `com.ennoic.app` and the existing external signing certificate are retained. A web reload alone cannot add the native toast/task-exit capability. See [the v0.2.2 report](../docs/MOBILE_V022.md) for the final APK hash, validation, deployment and physical Realme checklist.
+
+The verified debug APK is **5,553,647 bytes**, SHA-256 `74e16e6a4409cc9880227225cc6f9aeef375d15ca50dc17c29cae38436c18187`. `apksigner verify` passed v2 with the unchanged certificate listed below. Gradle passed; actual package, version, SDKs, launcher orientation configuration and exported AndroidX PostMessageService were inspected. Ten JVM timer checks and 45 Node tests passed. The prior v0.2.0 binary is preserved as `android/build/ennoic-test-debug-v020.apk`.
+
+All 135 Python tests, the complete existing browser regression and the focused Back browser suite passed. The focused suite uses real CloseWatcher events and a modeled native port; actual Android toast/task-exit and real Google handoffs require the runtime/device checks in the release report.
+
+`java/com/ennoic/app/LauncherActivity.java` uses supported AndroidX Custom Tabs APIs rather than overriding a Back method on the inactive Bubblewrap launcher. It preserves Browser Helper's provider selection, splash, delegation and Custom Tabs fallback. The target-origin MessagePort requires Digital Asset Links `common.use_as_origin`; only finite, nonce-bound commands are accepted. Native task closure checks the captured task ID and Ennoic base component. No WebView, Google-origin trust, cookie access, history sentinel or automatic TWA relaunch is added. Unsupported/stale bridges fail open to normal browser Back.
+
 ## v0.2.1 is a web update
 
 Composer keyboard bounds/compactness, accessible confirmation modals, contextual verification resend and installed-only pull-to-refresh suppression are delivered through the website. **No new APK or reinstall is required.** Open fresh pages or close/reopen the existing app online; an already-open document retains its current UI until navigation/reload. The installed package still reports `0.2.0-test`/code `2`; its binary, white native splash, package ID and signing certificate remain unchanged. See [the v0.2.1 report](../docs/MOBILE_V021.md) for tests, rollout and physical Realme keyboard/rotation/gesture checks.
@@ -14,8 +26,8 @@ An updated signed test APK has been generated for the mobile/tablet polish relea
 
 | Property | Verified result |
 | --- | --- |
-| Delivered file | `android/build/ennoic-test-debug.apk` (ignored local artifact) |
-| Absolute Windows path | `C:\Users\anuka\Desktop\ENNOIC\android\build\ennoic-test-debug.apk` |
+| Preserved previous file | `android/build/ennoic-test-debug-v020.apk` (ignored local artifact) |
+| Absolute Windows path | `C:\Users\anuka\Desktop\ENNOIC\android\build\ennoic-test-debug-v020.apk` |
 | Original build output | `android/generated/app/build/outputs/apk/debug/app-debug.apk` |
 | Size | 5,551,545 bytes |
 | APK SHA-256 | `e70278e284be52ff94e8ae698ef47fc861f93e58bfe5dc9aa160e59fb5149497` |
@@ -65,7 +77,7 @@ Only Android's directory has npm dependencies; Flask/Render do not use them. Gen
    adb install -r ".\android\build\ennoic-test-debug.apk"
    ```
 
-5. Launch **Ennoic from its Android app icon**. Opening the website in an ordinary browser tab does not test APK/TWA verification. Choose Update for the existing code-1 test build: its package and certificate match. Do not uninstall it for this update. Only an unrelated incompatible signing identity requires uninstalling or a separately planned migration.
+5. Choose Update for the existing test build: its package and certificate match. Remove the previous Ennoic session from Recents, then launch **Ennoic from its Android app icon** online so the new native host/session starts. Opening the website in an ordinary browser tab does not test APK/TWA verification. Do not uninstall Ennoic or clear Chrome/browser data. Only an unrelated incompatible signing identity requires uninstalling or a separately planned migration.
 
 Expect a white centered-wordmark splash, then the black-hole welcome if signed out or your existing dashboard if signed in. Native launch appearance still needs device confirmation. On a supported browser with successful verification, Ennoic pages should have **no address bar, browser overflow menu, or Custom Tab close button**. Android's system status/navigation bars may remain: their presence does not mean verification failed. Google sign-in and other external domains can legitimately show browser controls; returning to the Ennoic origin should restore the verified app view.
 
@@ -108,7 +120,14 @@ try { .\gradlew.bat --no-daemon --max-workers=1 '-Dorg.gradle.jvmargs=-Xmx512m -
 
 On another computer, replace the JDK/SDK paths with its actual installations. Obtain a portable JDK from [Adoptium](https://adoptium.net/installation/archives) and verify its published checksum before executing it. Install required Android SDK components from the [official Android tools](https://developer.android.com/studio#command-line-tools-only).
 
-`generate-debug.cjs` uses Bubblewrap's pinned core generator and the deployed manifest, overlays the Ennoic configuration, validates it, and writes `generated/twa-manifest.json` and the Gradle project. It references the standard user-local `~/.android/debug.keystore`; Gradle supplies debug signing without collecting a password. It refuses to replace a manifest with a non-debug signing alias. Regeneration overwrites generated project files; keep release projects separately. Debug version is `0.2.0-test`, code `2`. The helper requires the existing external debug keystore to be present so Gradle cannot silently generate a different identity. It overlays the embedded web-manifest launch/background metadata and reapplies the checked-in native resources/theme after regeneration. Restore the original key securely on another machine before building an update.
+`generate-debug.cjs` uses Bubblewrap's pinned core generator and the deployed manifest, overlays the Ennoic configuration, validates it, and writes `generated/twa-manifest.json` and the Gradle project. It references the standard user-local `~/.android/debug.keystore`; Gradle supplies debug signing without collecting a password. It refuses to replace a manifest with a non-debug signing alias. Regeneration overwrites generated project files; keep release projects separately. Debug version is `0.2.2-test`, code `3`. The helper requires the existing external debug keystore to be present so Gradle cannot silently generate a different identity. It overlays the embedded web-manifest launch/background metadata and reapplies the checked-in native resources/theme and `java/` launcher/state classes after regeneration. Restore the original key securely on another machine before building an update.
+
+The native two-second state has a JVM-only regression test, independent of Android/browser availability:
+
+```powershell
+& "$env:JAVA_HOME\bin\javac.exe" -d work/back-state-tests java/com/ennoic/app/RootBackState.java tests/RootBackStateTest.java
+& "$env:JAVA_HOME\bin\java.exe" -cp work/back-state-tests com.ennoic.app.RootBackStateTest
+```
 
 The expected Gradle artifact is `generated/app/build/outputs/apk/debug/app-debug.apk`. Confirm the build succeeded before using it. Verify with SDK tools:
 
@@ -156,7 +175,7 @@ All generated project/build files and signing artifacts are ignored. `npm instal
 
 ## Digital Asset Links
 
-Flask serves `GET /.well-known/assetlinks.json` without login, cookies, redirects, or database access, with JSON MIME type and revalidation headers. `pwa.py` contains the explicitly authorized **public** test package/certificate defaults above; no private key or password is checked in. The statement grants `delegate_permission/common.handle_all_urls` to the `android_app` target `com.ennoic.app` and its verified certificate fingerprint.
+Flask serves `GET /.well-known/assetlinks.json` without login, cookies, redirects, or database access, with JSON MIME type and revalidation headers. `pwa.py` contains the explicitly authorized **public** test package/certificate defaults above; no private key or password is checked in. The statement grants `delegate_permission/common.handle_all_urls` for TWA URL handling and `delegate_permission/common.use_as_origin` for verified native messaging to the same `android_app` target `com.ennoic.app` and certificate fingerprint. Google and payment origins are excluded.
 
 Environment overrides remain available:
 

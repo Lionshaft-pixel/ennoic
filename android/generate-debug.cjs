@@ -30,8 +30,8 @@ async function main() {
     themeColorDark: config.themeColor,
     navigationColorDark: config.themeColor,
     signingKey: {path: debugKeyPath, alias: "androiddebugkey"},
-    appVersion: config.appVersion || "0.2.0-test",
-    appVersionCode: config.appVersionCode || 2,
+    appVersion: config.appVersion || "0.2.2-test",
+    appVersionCode: config.appVersionCode || 3,
     generatorApp: "bubblewrap-cli",
     enableNotifications: false,
     additionalTrustedOrigins: [],
@@ -50,6 +50,7 @@ async function main() {
   await fs.writeFile(embeddedPath, JSON.stringify(embedded, null, 2) + "\n");
   // Keep native branding changes reproducible when Bubblewrap regenerates files.
   await fs.cp(path.join(__dirname, "resources"), path.join(destination, "app/src/main/res"), {recursive: true});
+  await fs.cp(path.join(__dirname, "java"), path.join(destination, "app/src/main/java"), {recursive: true});
   const androidManifestPath = path.join(destination, "app/src/main/AndroidManifest.xml");
   let androidManifest = await fs.readFile(androidManifestPath, "utf8");
   if (!androidManifest.includes('<activity android:name="LauncherActivity"')
@@ -57,8 +58,10 @@ async function main() {
     throw new Error("Bubblewrap's launcher template changed; review the splash integration before building.");
   }
   androidManifest = androidManifest.replace('<activity android:name="LauncherActivity"',
-    '<activity android:name="LauncherActivity" android:theme="@style/Theme.Ennoic.Launch"')
+    '<activity android:name="LauncherActivity" android:theme="@style/Theme.Ennoic.Launch" android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"')
     .replace('android:resource="@drawable/splash"', 'android:resource="@drawable/ennoic_splash_icon"');
+  androidManifest = androidManifest.replace('</application>',
+    '<service android:name="androidx.browser.customtabs.PostMessageService" android:exported="true" />\n    </application>');
   await fs.writeFile(androidManifestPath, androidManifest);
   console.log(`Debug project: ${destination}`);
 }

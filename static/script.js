@@ -163,7 +163,9 @@ mobile.addEventListener("change", () => {
   setSidebar(false);
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && sidebarIsOpen()) {
+  if (e.key === "Escape" && !e.defaultPrevented && sidebarIsOpen()
+    && !els.list.querySelector(".conversation-menu:not([hidden]), .conversation-rename input")) {
+    e.preventDefault();
     setSidebar(false);
     (mobile.matches ? els.mobileToggle : els.toggle).focus();
     return;
@@ -555,17 +557,49 @@ document.addEventListener("click", (event) => {
 });
 window.addEventListener("resize", () => closeConversationMenus());
 document.addEventListener("keydown", (event) => {
-  if (event.key !== "Escape") return;
+  if (event.key !== "Escape" || event.defaultPrevented) return;
   const openMenu = els.list.querySelector(".conversation-menu:not([hidden])");
   if (openMenu) {
+    event.preventDefault();
     const trigger = openMenu.parentElement.querySelector(".conversation-menu-trigger");
     openMenu.hidden = true;
     trigger.setAttribute("aria-expanded", "false");
     trigger.focus();
     return;
   }
-  if (els.list.querySelector(".conversation-rename input")) renderHistory();
+  if (els.list.querySelector(".conversation-rename input")) {
+    event.preventDefault();
+    renderHistory();
+  }
 });
+
+// The verified Android bridge reuses existing UI actions without browser history.
+window.EnnoicAppBack = {
+  closePanel() {
+    const menu = els.list.querySelector(".conversation-menu:not([hidden])");
+    if (menu) {
+      const trigger = menu.parentElement.querySelector(".conversation-menu-trigger");
+      closeConversationMenus();
+      trigger?.focus();
+      return true;
+    }
+    if (els.list.querySelector(".conversation-rename input")) {
+      renderHistory();
+      return true;
+    }
+    if (mobile.matches && sidebarIsOpen()) {
+      setSidebar(false);
+      els.mobileToggle.focus();
+      return true;
+    }
+    if (mobile.matches && els.app.dataset.mobileView === "tasks") {
+      setMobileView("chat");
+      els.mobileChat.focus();
+      return true;
+    }
+    return false;
+  },
+};
 
 function renderThread() {
   const convo = activeConversation();
@@ -908,6 +942,11 @@ async function deleteTask(task) {
   }
 }
 
+let resumeTaskAndroidBack = null;
+els.taskEditor.addEventListener("close", () => {
+  resumeTaskAndroidBack?.();
+  resumeTaskAndroidBack = null;
+});
 function openTaskEditor(task = null) {
   editingTaskId = task?.id ?? null;
   els.taskEditorForm.reset();
@@ -919,6 +958,7 @@ function openTaskEditor(task = null) {
   els.taskDeadline.value = task?.due_date ?? "";
   els.taskPriority.value = task?.priority ?? "medium";
   els.taskFormError.hidden = true;
+  resumeTaskAndroidBack = window.EnnoicAndroidBack?.suspendDialog();
   els.taskEditor.showModal();
   els.taskTitle.focus();
 }

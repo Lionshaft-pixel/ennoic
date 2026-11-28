@@ -47,6 +47,16 @@
     if (section === "account") loadPlan();
   }
 
+  window.EnnoicAppBack = {
+    closePanel() {
+      const general = panels.find((panel) => panel.dataset.settingsPanel === "general");
+      if (!general || !general.hidden) return false;
+      selectSection("general");
+      navItems.find((item) => item.dataset.section === "general")?.focus();
+      return true;
+    },
+  };
+
   let planRequestId = 0;
   async function loadPlan() {
     const requestId = ++planRequestId;

@@ -549,7 +549,7 @@ class AccountAuthenticationTests(AccountTestCase):
         script = workspace_script.get_data(as_text=True)
         self.assertIn("function setMobileView(view)", script)
         self.assertIn('els.sidebarBackdrop.addEventListener("click"', script)
-        self.assertIn('e.key === "Escape" && sidebarIsOpen()', script)
+        self.assertRegex(script, r'e\.key === "Escape" && [^\n]*sidebarIsOpen\(\)')
         self.assertIn('els.sidebar.setAttribute("aria-modal", "true")', script)
         self.assertIn('mobile.matches && sidebarIsOpen() && e.key === "Tab"', script)
 

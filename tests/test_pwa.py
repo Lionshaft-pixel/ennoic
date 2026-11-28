@@ -90,7 +90,8 @@ class PwaTests(unittest.TestCase):
         self.assertNotIn("Set-Cookie", response.headers)
         self.assertIn("must-revalidate", response.headers["Cache-Control"])
         self.assertEqual(response.get_json(), [{
-            "relation": ["delegate_permission/common.handle_all_urls"],
+            "relation": ["delegate_permission/common.handle_all_urls",
+                         "delegate_permission/common.use_as_origin"],
             "target": {
                 "namespace": "android_app",
                 "package_name": "com.ennoic.app",
@@ -117,6 +118,10 @@ class PwaTests(unittest.TestCase):
         }):
             response = self.client.get("/.well-known/assetlinks.json")
         self.assertEqual(response.mimetype, "application/json")
+        self.assertEqual(response.get_json()[0]["relation"], [
+            "delegate_permission/common.handle_all_urls",
+            "delegate_permission/common.use_as_origin",
+        ])
         target = response.get_json()[0]["target"]
         self.assertEqual(target["package_name"], "com.example.release")
         self.assertEqual(target["sha256_cert_fingerprints"], [fingerprint, second_fingerprint])

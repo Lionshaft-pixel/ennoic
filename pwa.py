@@ -55,7 +55,10 @@ def assetlinks():
     statements = []
     if fingerprints and valid_package and valid_fingerprints:
         statements.append({
-            "relation": ["delegate_permission/common.handle_all_urls"],
+            # URL handling verifies the TWA; use_as_origin independently verifies
+            # the same package/certificate for its scoped Custom Tabs message port.
+            "relation": ["delegate_permission/common.handle_all_urls",
+                         "delegate_permission/common.use_as_origin"],
             "target": {
                 "namespace": "android_app",
                 "package_name": package,

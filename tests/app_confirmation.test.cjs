@@ -96,6 +96,25 @@ test("Escape and external close cancel, with one pending decision and no duplica
   assert.equal(await third, true);
 });
 
+test("Android Back is suspended before opening a dialog and resumes after its removal", async () => {
+  const state = setup();
+  let suspended = 0;
+  let resumed = 0;
+  state.window.EnnoicAndroidBack = {
+    suspendDialog() {
+      assert.equal(state.dialog(), undefined);
+      suspended++;
+      return () => { assert.equal(state.dialog(), undefined); resumed++; };
+    },
+  };
+  const decision = state.api.confirm(options);
+  assert.equal(suspended, 1);
+  assert.equal(resumed, 0);
+  state.dialog().close();
+  assert.equal(await decision, false);
+  assert.equal(resumed, 1);
+});
+
 test("account deletion requires typed input and returns it unchanged for server validation", async () => {
   const state = setup();
   const decision = state.api.prompt({ ...options, inputLabel: "Type person@example.com to confirm account deletion." });
