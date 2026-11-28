@@ -529,7 +529,11 @@ async function toggleConversationPin(id) {
 
 async function deleteConversation(id) {
   const conversation = conversations.find((item) => item.id === id);
-  if (!conversation || !window.confirm(t("deleteConversationConfirm", { title: conversation.title }))) return;
+  if (!conversation || !await window.EnnoicConfirmation.confirm({
+    title: t("delete"),
+    message: t("deleteConversationConfirm", { title: conversation.title }),
+    confirmLabel: t("delete"), cancelLabel: t("cancel"), danger: true,
+  })) return;
   const oldConversations = conversations;
   const oldActiveId = activeId;
   conversations = conversations.filter((item) => item.id !== id);
@@ -891,7 +895,11 @@ async function changeTaskStatus(task) {
 }
 
 async function deleteTask(task) {
-  if (!window.confirm(t("deleteTaskConfirm", { title: task.title }))) return;
+  if (!await window.EnnoicConfirmation.confirm({
+    title: t("delete"),
+    message: t("deleteTaskConfirm", { title: task.title }),
+    confirmLabel: t("delete"), cancelLabel: t("cancel"), danger: true,
+  })) return;
   try {
     await requestJSON(`${TASKS_URL}/${encodeURIComponent(task.id)}`, { method: "DELETE" });
     await loadTasks();
@@ -1200,10 +1208,26 @@ function updateSendButton() { els.send.disabled = loading || !els.input.value.tr
 /* ---------- Composer ---------- */
 function autoGrow() {
   els.input.style.height = "auto";
-  els.input.style.height = Math.min(els.input.scrollHeight, 200) + "px";
+  const style = getComputedStyle(els.input);
+  const minimum = parseFloat(style.minHeight) || 0;
+  const maximum = parseFloat(style.maxHeight) || 200;
+  els.input.style.height = Math.max(minimum, Math.min(els.input.scrollHeight, maximum)) + "px";
 }
 
 els.input.addEventListener("input", () => { autoGrow(); updateSendButton(); });
+window.addEventListener("resize", autoGrow);
+window.addEventListener("ennoic:viewportchange", autoGrow);
+// Rewrap an existing draft when the chat becomes visible again after Tasks or
+// its panel width changes. Height-only changes do not create an observer loop.
+if ("ResizeObserver" in window) {
+  let previousComposerWidth = 0;
+  new ResizeObserver(([entry]) => {
+    const width = entry.contentRect.width;
+    if (width === previousComposerWidth) return;
+    previousComposerWidth = width;
+    if (width > 0) autoGrow();
+  }).observe(els.input.parentElement);
+}
 els.input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); els.form.requestSubmit(); }
 });

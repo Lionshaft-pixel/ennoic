@@ -496,8 +496,8 @@ def _google_oauth_configured():
     return bool(_google_oauth_value("CLIENT_ID") and _google_oauth_value("CLIENT_SECRET"))
 
 
-def _google_login_error(message, status=400):
-    return _auth_template(auth_error=message), status
+def _google_login_error(message, status=400, *, verification_help=False):
+    return _auth_template(auth_error=message, verification_help=verification_help), status
 
 
 def _send_token_email(user, purpose):
@@ -561,12 +561,14 @@ def _auth_template(**values):
     values.setdefault("auth_error", None)
     values.setdefault("auth_notice", None)
     values.setdefault("reset_token", None)
+    values.setdefault("verification_help", False)
     auth_context = {
         "activeForm": values["active_form"],
         "csrfToken": generate_csrf(),
         "error": values["auth_error"],
         "notice": values["auth_notice"],
         "resetToken": values["reset_token"],
+        "verificationHelp": values["verification_help"],
     }
     return render_template(
         "app_welcome.html" if app_launch else "authentication.html",
@@ -1021,7 +1023,10 @@ def google_callback():
             elif account_store.verify_email(user["id"]):
                 user = account_store.get_user(user["id"])
         if user is None or not user["email_verified"]:
-            return _google_login_error("This email is awaiting verification. Sign in after verifying it.")
+            return _google_login_error(
+                "This email is awaiting verification. Sign in after verifying it.",
+                verification_help=True,
+            )
         if user["deleted_at"] is not None:
             if not account_store.cancel_user_deletion(user["id"]):
                 return _google_login_error("This account is past its recovery period and is being deleted.")
@@ -1056,6 +1061,7 @@ def register():
     return _auth_template(
         auth_notice="If this address can be registered, a verification link will be sent. Check your inbox and spam folder.",
         active_form="login",
+        verification_help=True,
     ), 202
 
 
@@ -1073,19 +1079,21 @@ def continue_auth():
     except ValueError as exc:
         return _auth_template(auth_error=str(exc)), 400
 
+    # Keep recovery help uniform with the existing generic 202 notice so it
+    # cannot reveal account existence or whether a password matched.
     if user is not None:
         if not account_store.verify_password(user, password):
             if not _email_delivery_configured():
                 return _auth_template(
                     auth_error="Account email delivery is temporarily unavailable. Please try again later."
                 ), 503
-            return _auth_template(auth_notice=_AUTH_CONTINUE_NOTICE), 202
+            return _auth_template(auth_notice=_AUTH_CONTINUE_NOTICE, verification_help=True), 202
         if not user["email_verified"]:
             if not _email_delivery_configured():
                 return _auth_template(
                     auth_error="Account email delivery is temporarily unavailable. Please try again later."
                 ), 503
-            return _auth_template(auth_notice=_AUTH_CONTINUE_NOTICE), 202
+            return _auth_template(auth_notice=_AUTH_CONTINUE_NOTICE, verification_help=True), 202
         if user["deleted_at"] is not None:
             if not account_store.cancel_user_deletion(user["id"]):
                 return _auth_template(auth_error="Email or password is incorrect."), 401
@@ -1121,7 +1129,7 @@ def continue_auth():
         notify_discord("registration")
         _send_token_email(user, "verify")
     return _auth_template(
-        auth_notice=_AUTH_CONTINUE_NOTICE
+        auth_notice=_AUTH_CONTINUE_NOTICE, verification_help=True
     ), 202
 
 
@@ -1168,7 +1176,9 @@ def logout():
 def verify_email(token):
     user = _consume_email_token(token, "verify", max_age=60 * 60)
     if user is None or not account_store.verify_email(user["id"]):
-        return _auth_template(auth_error="That verification link is invalid or expired."), 400
+        return _auth_template(
+            auth_error="That verification link is invalid or expired.", verification_help=True
+        ), 400
     return _auth_template(auth_notice="Your email is verified. You can now sign in."), 200
 
 
@@ -1186,7 +1196,8 @@ def resend_verification():
     except ValueError:
         app.logger.info("account_verification_resend_skipped reason=invalid_email")
     return _auth_template(
-        auth_notice="If an unverified account matches this address, a verification email will be sent. Check your inbox and spam folder."
+        auth_notice="If an unverified account matches this address, a verification email will be sent. Check your inbox and spam folder.",
+        verification_help=True,
     ), 202
 
 

@@ -2,6 +2,10 @@
 
 This directory is independent of Flask, Python dependencies, Render's build, and the PWA. It wraps `https://ennoic.onrender.com/` in a Trusted Web Activity (TWA), using the device's browser engine. Google Play is optional: a signed APK can be installed directly.
 
+## v0.2.1 is a web update
+
+Composer keyboard bounds/compactness, accessible confirmation modals, contextual verification resend and installed-only pull-to-refresh suppression are delivered through the website. **No new APK or reinstall is required.** Open fresh pages or close/reopen the existing app online; an already-open document retains its current UI until navigation/reload. The installed package still reports `0.2.0-test`/code `2`; its binary, white native splash, package ID and signing certificate remain unchanged. See [the v0.2.1 report](../docs/MOBILE_V021.md) for tests, rollout and physical Realme keyboard/rotation/gesture checks.
+
 ## Current mobile release - 28 November 2026
 
 An updated signed test APK has been generated for the mobile/tablet polish release. The same package and certificate allow it to update the code-1 build already tested on the Realme Pad X. The native splash changes require this APK update; the welcome/layout/navigation changes are served by the website. See [the mobile report](../docs/MOBILE_UX.md), [PWA results](../docs/PWA.md), and [checkout/Google review](../docs/MOBILE_CHECKOUT_REVIEW.md).

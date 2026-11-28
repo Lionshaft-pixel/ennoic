@@ -72,7 +72,7 @@
       </form>
       <nav class="welcome-help" aria-label="Account help">
         <a href="{{ url_for('app_email_help') }}">Forgot password?</a>
-        <a href="{{ url_for('app_email_help', action='verify') }}">Verify email</a>
+        {% if verification_help %}<a href="{{ url_for('app_email_help', action='verify') }}">Resend verification email</a>{% endif %}
       </nav>
       <p class="welcome-signup">{{ 'Already have an account?' if active_form == 'register' else 'New to Ennoic?' }} <a href="{{ url_for('app_launch') if active_form == 'register' else url_for('app_launch', form='register') }}">{{ 'Sign in' if active_form == 'register' else 'Create an account' }}</a></p>
       {% endif %}

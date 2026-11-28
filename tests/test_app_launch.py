@@ -10,6 +10,70 @@ from test_accounts import AccountTestCase
 
 
 class AppLaunchTests(AccountTestCase):
+    def test_verification_help_is_contextual_and_preserves_private_auth_responses(self):
+        verified = self.create_verified_user("verification-help-verified@example.com")
+        unverified = account_store.create_user(
+            "verification-help-pending@example.com", "correct-horse-battery-7"
+        )
+        for installed in (False, True):
+            with self.subTest(installed=installed):
+                client = app.app.test_client()
+                entry = "/app" if installed else "/login"
+                for path in (entry, entry + "?form=register"):
+                    initial = client.get(path)
+                    self.assertFalse(self.auth_context(initial)["verificationHelp"])
+                    self.assertNotIn(b"Resend verification email", initial.data)
+                    self.assertNotIn(b">Verify email<", initial.data)
+
+                token = self.csrf_token(client, entry)
+                responses = []
+                with patch("app._email_delivery_configured", return_value=True), patch(
+                    "app._send_token_email", return_value=True
+                ) as send_email:
+                    for email, password in (
+                        (verified["email"], "wrong-but-valid-password-7"),
+                        (unverified["email"], "correct-horse-battery-7"),
+                        (f"verification-help-new-{installed}@example.com", "correct-horse-battery-7"),
+                    ):
+                        response = client.post("/auth/continue", data={
+                            "csrf_token": token, "email": email, "password": password,
+                        })
+                        self.assertEqual(response.status_code, 202)
+                        context = self.auth_context(response)
+                        self.assertTrue(context["verificationHelp"])
+                        responses.append(context["notice"])
+                        if installed:
+                            self.assertIn(b'Resend verification email</a>', response.data)
+                            self.assertIn(b'href="/app/email-help?action=verify"', response.data)
+                # The same contextual help and notice cannot disclose whether an
+                # address exists or a password matched. Only registration sends.
+                self.assertEqual(len(set(responses)), 1)
+                send_email.assert_called_once()
+                self.assertFalse(client.get("/api/auth/me").get_json()["authenticated"])
+
+    def test_contextual_resend_preserves_csrf_and_only_emails_pending_accounts(self):
+        verified = self.create_verified_user("resend-verified@example.com")
+        pending = account_store.create_user("resend-pending@example.com", "correct-horse-battery-7")
+        client = app.app.test_client()
+        token = self.csrf_token(client, "/app")
+        with patch("app._send_token_email", return_value=True) as send_email:
+            self.assertEqual(client.post(
+                "/auth/resend-verification", data={"email": pending["email"]}
+            ).status_code, 400)
+            notices = []
+            for email in (pending["email"], verified["email"], "resend-unknown@example.com", "invalid"):
+                response = client.post("/auth/resend-verification", data={
+                    "csrf_token": token, "email": email,
+                })
+                self.assertEqual(response.status_code, 202)
+                context = self.auth_context(response)
+                self.assertTrue(context["verificationHelp"])
+                notices.append(context["notice"])
+            self.assertEqual(len(set(notices)), 1)
+            send_email.assert_called_once_with(pending, "verify")
+        self.assertFalse(account_store.get_user(pending["id"])["email_verified"])
+        self.assertFalse(client.get("/api/auth/me").get_json()["authenticated"])
+
     def test_initial_dashboard_and_settings_skip_usage_counters_but_keep_billing_status(self):
         user = self.create_verified_user("navigation-status@example.com")
         client = app.app.test_client()
@@ -26,6 +90,7 @@ class AppLaunchTests(AccountTestCase):
             response = client.get("/settings")
             self.assertEqual(response.status_code, 200)
             self.assertIn(b'data-account-has-billing="true"', response.data)
+            self.assertIn(b'data-account-plan="pro"', response.data)
             self.assertIn(b"Ends this billing period", response.data)
             self.assertIn(b"2027-01-15", response.data)
 
@@ -81,6 +146,7 @@ class AppLaunchTests(AccountTestCase):
             })
         self.assertEqual(signup.status_code, 202)
         self.assertIn(b"data-app-welcome", signup.data)
+        self.assertTrue(self.auth_context(signup)["verificationHelp"])
         user = account_store.get_user_by_email("installed-new@example.com")
         self.assertFalse(user["email_verified"])
         send_email.assert_called_once_with(user, "verify")

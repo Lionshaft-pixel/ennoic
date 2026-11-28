@@ -42,10 +42,12 @@ function postForm(action, values) {
 
 function closeModal(overlay) {
   overlay.remove();
+  overlay.authReturnFocus?.focus();
 }
 
 function openEmailModal({ title, action, submitLabel }) {
   const overlay = document.createElement("div");
+  overlay.authReturnFocus = document.activeElement;
   overlay.style.cssText = "position:fixed;inset:0;z-index:10000;display:grid;place-items:center;padding:20px;background:rgba(0,0,0,.72)";
   const dialog = document.createElement("section");
   dialog.setAttribute("role", "dialog");
@@ -76,6 +78,7 @@ function openEmailModal({ title, action, submitLabel }) {
   email.autocomplete = "email";
   email.maxLength = 254;
   email.required = true;
+  email.value = card.querySelector("#email")?.value || "";
   email.style.cssText = "height:48px;box-sizing:border-box;padding:0 16px;border-radius:14px;border:1px solid rgba(255,206,160,.3);background:rgba(8,3,1,.55);color:#fff;font-family:inherit;font-size:15px";
   const controls = document.createElement("div");
   controls.style.cssText = "display:flex;gap:10px;margin-top:6px";
@@ -94,6 +97,20 @@ function openEmailModal({ title, action, submitLabel }) {
   overlay.append(dialog);
   overlay.addEventListener("click", (event) => {
     if (event.target === overlay) closeModal(overlay);
+  });
+  overlay.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeModal(overlay);
+    } else if (event.key === "Tab") {
+      if (event.shiftKey && document.activeElement === email) {
+        event.preventDefault();
+        cancel.focus();
+      } else if (!event.shiftKey && document.activeElement === cancel) {
+        event.preventDefault();
+        email.focus();
+      }
+    }
   });
   document.body.append(overlay);
   email.focus();
@@ -154,6 +171,23 @@ if (card && authContext.resetToken) {
 
   addMessage(card, authContext.error, true);
   addMessage(card, authContext.notice, false);
+
+  // Verification is recovery for an attempted email flow, rather than another
+  // sign-in method. The server sends this flag with the same generic response
+  // for registration, unknown addresses, and incorrect passwords.
+  if (authContext.verificationHelp) {
+    const resend = document.createElement("button");
+    resend.type = "button";
+    resend.dataset.verificationHelp = "";
+    resend.textContent = "Resend verification email";
+    resend.style.cssText = "margin:12px 0;min-height:44px;padding:8px 0;border:0;background:transparent;color:#ffd9a8;font-family:inherit;font-size:13px;font-weight:600;line-height:1.4;text-align:left;text-decoration:underline;cursor:pointer";
+    resend.addEventListener("click", () => openEmailModal({
+      title: "Resend verification email",
+      action: "/auth/resend-verification",
+      submitLabel: "Send verification link",
+    }));
+    card.append(resend);
+  }
 
   function ensureAuthMessages() {
     if (authContext.error && !card.querySelector('[data-auth-message="error"]')) {

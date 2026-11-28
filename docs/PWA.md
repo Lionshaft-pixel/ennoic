@@ -1,8 +1,14 @@
 # Ennoic PWA implementation and test report
 
+## v0.2.1 mobile web polish
+
+The v0.2.1 follow-up makes the composer more compact and follows keyboard/visual-viewport bounds, replaces native sign-out/account/task/conversation confirmations with accessible in-page modals, makes verification resend contextual, and contains vertical overscroll only in standalone windows. Authentication/deletion security, private-cache boundaries, native splash, package and certificate remain unchanged. See [the focused report](MOBILE_V021.md) for diagnosis, exact files, testing and physical-device checks.
+
+Full isolated validation passed **135 Python tests and 31 Node tests**, plus 36 composer bounds checks. The existing APK receives these changes from the website; rebuilding it is unnecessary. Final browser/deployment results are recorded in that report after verification.
+
 Audited 27 November 2026 and revalidated 28 November 2026 against original production commit `9c0736fd9d28a90065de9679b06101bbce42433f` on `vibecoded`. The PWA implementation is preserved in commit `b0a419b762ca63638a3fefaa3bf05b6b926b2c3c`. The user authorized the readiness fix, verified production push, and local Android test build. Routes, templates, branding, public cache boundaries, deployment configuration, tests, scripts, and Android preparation were reviewed. Production/build outcomes are recorded below.
 
-## Current mobile-polish release - 28 November 2026
+## Previous mobile-polish release - 28 November 2026 (v0.2.0)
 
 The follow-up adds `/app` installed launch, the original black-hole welcome artwork/direct email authentication, responsive chat spacing, immediate navigation feedback, accessible touch polish, clearer UPI disclosures and a white native splash. Browser `/` retains the existing marketing page. Prices, entitlements, database schemas and AI prompts are unchanged. A pre-existing Paddle cancellation transport URL was corrected with mocked regression coverage. See [the mobile report and exact file inventory](MOBILE_UX.md) and [provider findings/manual console steps](MOBILE_CHECKOUT_REVIEW.md).
 

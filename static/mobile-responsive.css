@@ -255,7 +255,7 @@
     padding: 9px;
     margin-bottom: 4px;
   }
-  .composer textarea { min-height: 58px; height: auto; max-height: 128px; padding: 6px 2px; overflow-y: auto; font-size: 16px; line-height: 1.45; }
+  .composer textarea { min-height: 44px; height: auto; max-height: 128px; padding: 10px 2px; overflow-y: auto; font-size: 16px; line-height: 1.45; }
   .composer .send { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
   .composer-hint { display: none; }
   dialog { width: calc(100% - 24px); max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); padding: 20px; }
@@ -264,6 +264,33 @@
   #task-editor-form select { min-height: 46px; font-size: 16px; }
   #task-editor-form textarea { min-height: 90px; }
   .dialog-actions .btn { min-height: 44px; }
+}
+
+/* A keyboard may shrink only the visual viewport, leaving 100dvh unchanged.
+   The small helper tracks that viewport; CSS remains the fallback without it.
+   Coarse-pointer tablets need the same bounds in landscape above 940px. */
+@media (max-width: 940px), (pointer: coarse) and (max-width: 1440px) {
+  .ennoic-app {
+    position: fixed;
+    inset: var(--app-visible-top, 0px) 0 auto;
+    height: 100dvh;
+    height: var(--app-visible-height, 100dvh);
+  }
+  .ennoic-app .stage { padding-bottom: 12px; }
+  .ennoic-app .hero { min-height: 0; flex-shrink: 1; overflow: hidden; }
+  .ennoic-app[data-viewport-compact="true"] .hero .orb { display: none; }
+  .ennoic-app .stage[data-chat-state="empty"] .composer { margin-top: auto; margin-bottom: 4px !important; }
+  .ennoic-app .composer { gap: 8px; padding: 6px; align-items: flex-end; }
+  .ennoic-app .composer textarea {
+    min-height: 44px;
+    height: 44px;
+    max-height: clamp(44px, calc(var(--app-visible-height, 100dvh) * .28), 128px);
+    padding: 10px 2px;
+    font-size: 16px;
+    line-height: 1.45;
+  }
+  .ennoic-app .composer .send { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
+  .ennoic-app .composer-hint { display: none; }
 }
 
 @media (max-width: 480px) {

@@ -17,7 +17,7 @@
 </head>
 <body>
   <a class="settings-skip" href="#settings-content" data-i18n="skipToSettings">Skip to settings</a>
-  <div class="settings-shell" id="settings-app" data-user-id="{{ user.id }}" data-user-email="{{ user.email }}" data-account-has-billing="{{ 'true' if account.provider in ['paddle', 'razorpay'] and account.status in ['active', 'past_due', 'canceled'] or account.provider == 'razorpay' and account.status == 'expired' else 'false' }}">
+  <div class="settings-shell" id="settings-app" data-user-id="{{ user.id }}" data-user-email="{{ user.email }}" data-account-plan="{{ account.plan }}" data-account-has-billing="{{ 'true' if account.provider in ['paddle', 'razorpay'] and account.status in ['active', 'past_due', 'canceled'] or account.provider == 'razorpay' and account.status == 'expired' else 'false' }}">
     <aside class="settings-sidebar" id="settings-sidebar" aria-label="Settings navigation" data-i18n-aria-label="settingsNavigation">
       <div class="settings-sidebar-top">
         <button class="sidebar-toggle" id="settings-sidebar-toggle" type="button" aria-label="Collapse sidebar" aria-expanded="true" data-i18n-aria-label="collapseSettingsSidebar">

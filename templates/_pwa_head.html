@@ -8,5 +8,7 @@
   <link data-ennoic-pwa rel="icon" type="image/png" sizes="192x192" href="/static/pwa/icons/icon-192.png">
   <link data-ennoic-pwa rel="stylesheet" href="/static/pwa/pwa.css">
   <link data-ennoic-pwa rel="stylesheet" href="/static/app-navigation.css">
+  <link data-ennoic-pwa rel="stylesheet" href="/static/app-confirmation.css">
+  <script src="/static/app-confirmation.js"{% if csp_nonce is defined %} nonce="{{ csp_nonce }}"{% endif %} defer></script>
   <script src="/static/app-navigation.js"{% if csp_nonce is defined %} nonce="{{ csp_nonce }}"{% endif %} defer></script>
   <script src="/static/pwa/pwa.js"{% if csp_nonce is defined %} nonce="{{ csp_nonce }}"{% endif %} defer></script>

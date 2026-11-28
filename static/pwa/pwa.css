@@ -4,3 +4,11 @@
 .ennoic-pwa-tools button { padding: 6px 10px; border: 1px solid currentColor; border-radius: 8px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 .ennoic-pwa-tools button:focus-visible { outline: 2px solid #e8650f; outline-offset: 3px; }
 .ennoic-pwa-tools p { margin: 8px 0 0; max-width: 36em; font: inherit; color: inherit; }
+
+/* Contain vertical boundary gestures in installed windows. Internal scrolling,
+   selection, horizontal history gestures and ordinary browser refresh remain. */
+@media (display-mode: standalone) {
+  html, body { overscroll-behavior-y: contain; }
+}
+html.ennoic-installed,
+html.ennoic-installed body { overscroll-behavior-y: contain; }

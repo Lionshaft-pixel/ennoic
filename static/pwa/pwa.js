@@ -6,6 +6,12 @@
   let iosHelpExpanded = false;
   const displayMode = window.matchMedia("(display-mode: standalone)");
   const isInstalled = () => displayMode.matches || navigator.standalone === true;
+  // A presentation preference only: /app and shared session cookies are not
+  // evidence of installation. Reapply after the saved auth/landing replaces HTML.
+  function syncInstalledMode() {
+    document.documentElement.classList.toggle("ennoic-installed", isInstalled());
+  }
+  syncInstalledMode();
   // Upgrade older installations whose saved start URL is still '/'. New PWAs
   // and the TWA use /app explicitly; ordinary browser visits keep their landing.
   let legacyAndroidLaunch = false;
@@ -79,9 +85,16 @@
     installPrompt = null;
     renderInstallOption();
   });
-  displayMode.addEventListener?.("change", renderInstallOption);
+  displayMode.addEventListener?.("change", () => {
+    syncInstalledMode();
+    renderInstallOption();
+  });
   // The saved landing/auth bundles replace the DOM, but window listeners survive.
-  window.addEventListener("ennoic:page-ready", renderInstallOption);
+  window.addEventListener("ennoic:page-ready", () => {
+    syncInstalledMode();
+    renderInstallOption();
+  });
+  window.addEventListener("pageshow", syncInstalledMode);
   renderInstallOption();
 
   if ("serviceWorker" in navigator) {

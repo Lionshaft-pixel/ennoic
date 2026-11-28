@@ -171,15 +171,19 @@
   });
 
   $("delete-account").addEventListener("click", async (event) => {
-    const confirmationMessage = app.dataset.accountHasBilling === "true"
+    const button = event.currentTarget;
+    const billingMessage = app.dataset.accountHasBilling === "true"
       ? (app.dataset.accountPlan === "free"
         ? t("deleteAccountPastSubscriptionConfirm")
         : t("deleteAccountProConfirm"))
-      : t("deleteAccountConfirm");
-    if (!window.confirm(confirmationMessage)) return;
-    const typedEmail = window.prompt(t("deleteAccountPrompt", { email: app.dataset.userEmail }));
+      : "";
+    const typedEmail = await window.EnnoicConfirmation.prompt({
+      title: t("deleteAccount"),
+      message: [t("deleteAccountConfirm"), billingMessage].filter(Boolean).join("\n\n"),
+      inputLabel: t("deleteAccountPrompt", { email: app.dataset.userEmail }),
+      confirmLabel: t("deleteAccount"), cancelLabel: t("cancel"), danger: true,
+    });
     if (typedEmail === null) return;
-    const button = event.currentTarget;
     const feedback = $("account-feedback");
     button.disabled = true;
     feedback.textContent = "";
@@ -206,7 +210,24 @@
     }
   });
 
-  $("settings-sign-out-form").addEventListener("submit", (event) => {
-    if (!window.confirm(t("signOutConfirm"))) event.preventDefault();
+  let signOutApproved = false;
+  $("settings-sign-out-form").addEventListener("submit", async (event) => {
+    if (signOutApproved) return;
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submitter = event.submitter;
+    if (!await window.EnnoicConfirmation.confirm({
+      title: t("signOut"), message: t("signOutConfirm"),
+      confirmLabel: t("signOut"), cancelLabel: t("cancel"),
+    })) return;
+    signOutApproved = true;
+    // Resubmit the existing POST form, retaining its CSRF field and browser validation.
+    try {
+      if (submitter) form.requestSubmit(submitter);
+      else form.requestSubmit();
+    } finally {
+      // A canceled navigation or BFCache return must still ask next time.
+      signOutApproved = false;
+    }
   });
 })();

@@ -47,6 +47,20 @@ def navigation_timing(page):
     }""")
 
 
+def watch_page(page, errors):
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    def unexpected_dialog(dialog):
+        errors.append("Unexpected native browser dialog: " + dialog.type)
+        dialog.dismiss()
+    page.on("dialog", unexpected_dialog)
+
+
+def confirmation(page):
+    modal = page.locator("#ennoic-confirmation[open]")
+    expect(modal).to_be_visible()
+    return modal
+
+
 class QuietHandler(WSGIRequestHandler):
     def log(self, *args, **kwargs):
         pass
@@ -69,6 +83,8 @@ def main():
         account_store.initialize()
         user = account_store.create_user("pwa-smoke@example.com", "local-smoke-password-2026")
         account_store.verify_email(user["id"])
+        deletion_user = account_store.create_user("delete-smoke@example.com", "local-smoke-password-2026")
+        account_store.verify_email(deletion_user["id"])
         # Exercise the real chat endpoint/persistence/UI without a billable AI call.
         application.process_message_with_metadata = lambda *a, **k: {"reply": "Local AI transport test succeeded."}
         # Prevent any incidental external server-side request in this test process.
@@ -113,11 +129,12 @@ def main():
                 browser = context.browser
                 page = context.new_page()
                 errors = []
-                page.on("pageerror", lambda error: (errors.append(str(error)), print("PAGE ERROR:", str(error))))
+                watch_page(page, errors)
                 page.goto(origin + "/")
                 expect(page.locator("html.ennoic-landing-document")).to_be_attached()
                 expect(page.locator("#dc-root")).to_be_attached()
                 check_metadata(page)
+                assert page.evaluate("getComputedStyle(document.documentElement).overscrollBehaviorY") == "auto"
                 # Promise listeners avoid Playwright's eval-based polling under CSP.
                 page.evaluate("""async () => {
                   await navigator.serviceWorker.ready;
@@ -169,8 +186,14 @@ def main():
                 page.locator("#task-title-input").fill("PWA delete test")
                 page.locator("#save-task").click()
                 expect(page.locator(".task-title", has_text="PWA delete test")).to_be_visible()
-                page.once("dialog", lambda dialog: dialog.accept())
                 page.get_by_role("button", name="Delete PWA delete test", exact=True).click()
+                modal = confirmation(page)
+                expect(modal.locator("[data-confirmation-cancel]")).to_be_focused()
+                page.keyboard.press("Escape")
+                expect(page.locator(".task-title", has_text="PWA delete test")).to_be_visible()
+                expect(page.get_by_role("button", name="Delete PWA delete test", exact=True)).to_be_focused()
+                page.get_by_role("button", name="Delete PWA delete test", exact=True).click()
+                confirmation(page).locator("[data-confirmation-accept]").click()
                 expect(page.locator(".task-title", has_text="PWA delete test")).to_have_count(0)
                 page.locator('[data-task-view="completed"]').click()
                 results["task_deletion"] = "passed with disposable local test task"
@@ -216,7 +239,7 @@ def main():
                 # Reopen the page in the same browser context to retain the existing session cookie.
                 page.close()
                 page = context.new_page()
-                page.on("pageerror", lambda error: errors.append(str(error)))
+                watch_page(page, errors)
                 page.goto(origin + "/")
                 expect(page.locator("#app")).to_be_visible()
                 expect(page.locator("#messages")).to_contain_text("Local AI transport test succeeded.")
@@ -233,8 +256,17 @@ def main():
                 page.goto(origin + "/settings")
                 expect(page.locator("#settings-app")).to_be_visible()
                 page.locator('[data-section="account"]').click()
-                page.once("dialog", lambda dialog: dialog.accept())
                 page.locator('#settings-sign-out-form button').click()
+                modal = confirmation(page)
+                expect(modal.locator("[data-confirmation-cancel]")).to_be_focused()
+                page.keyboard.press("Tab")
+                expect(modal.locator("[data-confirmation-accept]")).to_be_focused()
+                page.keyboard.press("Tab")
+                expect(modal.locator("[data-confirmation-cancel]")).to_be_focused()
+                modal.locator("[data-confirmation-cancel]").click()
+                assert page.evaluate("fetch('/api/auth/me').then(r => r.json()).then(j => j.authenticated)") is True
+                page.locator('#settings-sign-out-form button').click()
+                confirmation(page).locator("[data-confirmation-accept]").click()
                 expect(page.locator("html.ennoic-landing-document")).to_be_attached()
                 assert page.evaluate("fetch('/api/auth/me').then(r => r.json()).then(j => j.authenticated)") is False
                 results["logout"] = "passed through existing settings form"
@@ -242,7 +274,7 @@ def main():
 
                 mobile = browser.new_context(**playwright.devices["Pixel 7"])
                 mobile_page = mobile.new_page()
-                mobile_page.on("pageerror", lambda error: errors.append(str(error)))
+                watch_page(mobile_page, errors)
                 mobile_page.goto(origin + "/")
                 expect(mobile_page.locator("html.ennoic-landing-document")).to_be_attached()
                 check_metadata(mobile_page)
@@ -268,9 +300,11 @@ def main():
                 # PWAs; no user-agent classification is involved in this flow.
                 installed = browser.new_context(viewport={"width": 800, "height": 1280}, has_touch=True)
                 app_page = installed.new_page()
-                app_page.on("pageerror", lambda error: errors.append(str(error)))
+                watch_page(app_page, errors)
                 app_page.goto(origin + "/app")
                 expect(app_page.locator("[data-app-welcome]")).to_be_visible()
+                expect(app_page.get_by_text("Verify email", exact=True)).to_have_count(0)
+                assert app_page.evaluate("getComputedStyle(document.documentElement).overscrollBehaviorY") == "auto"
                 expect(app_page.get_by_role("link", name="Continue with Google")).to_be_visible()
                 expect(app_page.locator("#password")).to_be_hidden()
                 assert app_page.evaluate("document.documentElement.scrollWidth <= innerWidth")
@@ -280,6 +314,7 @@ def main():
                 app_page.goto(origin + "/")
                 expect(app_page.locator("#dc-root")).to_be_attached()
                 app_page.goto(origin + "/app?form=register")
+                expect(app_page.get_by_text("Verify email", exact=True)).to_have_count(0)
                 expect(app_page.get_by_role("link", name="Sign in", exact=True)).to_be_visible()
                 app_page.goto(origin + "/app/email-help")
                 expect(app_page.locator('form[action="/auth/password-reset"]')).to_be_visible()
@@ -293,7 +328,7 @@ def main():
                 expect(app_page).to_have_url(origin + "/app")
                 expect(app_page.locator("#app")).to_be_visible()
                 expect(app_page.locator(".history-item")).to_have_count(2)
-                if not app_page.locator(".history-item").first.is_visible():
+                if app_page.locator("#app").get_attribute("data-sidebar") != "open":
                     toggle = app_page.locator("#mobile-menu-toggle")
                     (toggle if toggle.is_visible() else app_page.locator("#toggle-sidebar")).click()
                 app_page.locator(".history-item").filter(has_text="Hello from the PWA test").click()
@@ -336,7 +371,7 @@ def main():
                 app_page.goto(origin + "/app")
                 app_page.close()
                 app_page = installed.new_page()
-                app_page.on("pageerror", lambda error: errors.append(str(error)))
+                watch_page(app_page, errors)
                 app_page.goto(origin + "/app")
                 expect(app_page.locator("#app")).to_be_visible()
                 expect(app_page.locator("#messages")).to_contain_text("Local AI transport test succeeded.")
@@ -352,8 +387,8 @@ def main():
                 results["installed_offline_recovery"] = "passed generic offline /app fallback and authenticated recovery"
                 app_page.goto(origin + "/settings")
                 app_page.locator('[data-section="account"]').click()
-                app_page.once("dialog", lambda dialog: dialog.accept())
                 app_page.locator('#settings-sign-out-form button').click()
+                confirmation(app_page).locator("[data-confirmation-accept]").click()
                 expect(app_page).to_have_url(origin + "/app")
                 expect(app_page.locator("[data-app-welcome]")).to_be_visible()
                 assert app_page.evaluate("fetch('/api/auth/me').then(r => r.json()).then(j => j.authenticated)") is False
@@ -387,11 +422,71 @@ def main():
                 assert oauth["redirect_uri"] == origin + "/auth/google/callback"
                 assert oauth["code_challenge_method"] == "S256"
                 results["installed_google_callback"] = "passed authorization with browser cookie jar, mocked token/identity callback, canonical URI, PKCE and /app return"
+
+                # Exercise the remaining destructive UI using disposable local
+                # data only. The real server retains CSRF/email/deletion policy.
+                expect(app_page.locator(".history-item")).to_have_count(2)
+                if app_page.locator("#app").get_attribute("data-sidebar") != "open":
+                    app_page.locator("#mobile-menu-toggle").click()
+                history = app_page.locator(".history-row").filter(has_text="Second conversation history test")
+                history.locator(".conversation-menu-trigger").click()
+                history.get_by_role("menuitem", name="Delete", exact=True).click()
+                modal = confirmation(app_page)
+                modal.locator("[data-confirmation-cancel]").click()
+                expect(app_page.locator(".history-item")).to_have_count(2)
+                history.locator(".conversation-menu-trigger").click()
+                history.get_by_role("menuitem", name="Delete", exact=True).click()
+                confirmation(app_page).locator("[data-confirmation-accept]").click()
+                expect(app_page.locator(".history-item")).to_have_count(1)
+                results["custom_confirmation_flows"] = "passed task/conversation deletion cancel+accept, sign-out Cancel/Tab/Escape/focus return+accept, no native dialogs"
                 installed.close()
+
+                deletion_context = browser.new_context(viewport={"width":390,"height":844}, has_touch=True)
+                deletion_page = deletion_context.new_page()
+                watch_page(deletion_page, errors)
+                deletion_page.goto(origin + "/app")
+                expect(deletion_page.get_by_role("button", name="Continue with email", exact=True)).to_be_visible()
+                deletion_page.locator("#email").fill(deletion_user["email"])
+                deletion_page.get_by_role("button", name="Continue with email", exact=True).click()
+                deletion_page.locator("#password").fill("local-smoke-password-2026")
+                deletion_page.get_by_role("button", name="Continue", exact=True).click()
+                expect(deletion_page.locator("#app")).to_be_visible()
+                deletion_page.goto(origin + "/settings")
+                deletion_page.locator('[data-section="account"]').click()
+                deletion_page.locator("#delete-account").click()
+                modal = confirmation(deletion_page)
+                expect(modal).to_contain_text("30 days")
+                expect(modal.locator("[data-confirmation-cancel]")).to_be_focused()
+                deletion_page.set_viewport_size({"width":390,"height":350})
+                modal.locator("#ennoic-confirmation-input").focus()
+                bounds = modal.bounding_box()
+                actions = modal.locator(".ennoic-confirmation-actions").bounding_box()
+                field = modal.locator("#ennoic-confirmation-input").bounding_box()
+                assert bounds["y"] >= 0 and bounds["y"] + bounds["height"] <= 350, bounds
+                assert actions["y"] + actions["height"] <= 350, actions
+                assert field["y"] >= bounds["y"] and field["y"] + field["height"] <= actions["y"], field
+                deletion_page.screenshot(path=str(output / "v021-account-modal-keyboard.png"))
+                deletion_page.set_viewport_size({"width":390,"height":844})
+                modal.locator("[data-confirmation-cancel]").click()
+                assert deletion_page.evaluate("fetch('/api/auth/me').then(r => r.json()).then(j => j.authenticated)") is True
+                deletion_page.locator("#delete-account").click()
+                modal = confirmation(deletion_page)
+                modal.locator("#ennoic-confirmation-input").fill("wrong@example.com")
+                modal.locator("[data-confirmation-accept]").click()
+                expect(deletion_page.locator("#account-feedback")).not_to_be_empty()
+                assert deletion_page.evaluate("fetch('/api/auth/me').then(r => r.json()).then(j => j.authenticated)") is True
+                deletion_page.locator("#delete-account").click()
+                modal = confirmation(deletion_page)
+                modal.locator("#ennoic-confirmation-input").fill(deletion_user["email"])
+                modal.locator("[data-confirmation-accept]").click()
+                expect(deletion_page).to_have_url(origin + "/login?deletion=scheduled")
+                assert deletion_page.evaluate("fetch('/api/auth/me').then(r => r.json()).then(j => j.authenticated)") is False
+                results["account_deletion_modal"] = "passed Cancel, server wrong-email rejection and existing scheduled deletion with exact-email confirmation; disposable local account only"
+                deletion_context.close()
 
                 ios = browser.new_context(**playwright.devices["iPhone 13"])
                 ios_page = ios.new_page()
-                ios_page.on("pageerror", lambda error: errors.append(str(error)))
+                watch_page(ios_page, errors)
                 ios_page.goto(origin + "/")
                 expect(ios_page.locator("#dc-root")).to_be_attached()
                 ios_button = ios_page.get_by_role("button", name="Add Ennoic to Home Screen", exact=True)
@@ -409,7 +504,9 @@ def main():
                 expect(ios_page).to_have_url(origin + "/app")
                 expect(ios_page.locator("[data-app-welcome]")).to_be_visible()
                 expect(ios_page.locator("[data-pwa-install-slot]")).to_have_count(0)
+                assert ios_page.evaluate("getComputedStyle(document.documentElement).overscrollBehaviorY") == "contain"
                 results["standalone_legacy_launch"] = "passed simulated iOS standalone / to /app upgrade; no install prompt"
+                results["installed_scroll_policy"] = "passed standalone vertical overscroll containment; no touch-event interception"
                 results["page_errors"] = errors
                 assert not errors, errors
                 browser.close()
